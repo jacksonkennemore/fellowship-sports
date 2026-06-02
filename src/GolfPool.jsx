@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { supabase } from "./supabase";
 
 // ── 2026 US OPEN FIELD — DRAFTKINGS ODDS — BALANCED 6 TIERS ─────────────────
 // Tier sizing: T1=10, T2=10, T3=12, T4=14, T5=16, T6=20+ (most in T6)
@@ -279,6 +280,8 @@ const S = {
 
 export default function GolfPool({ onBack }) {
   const [db, setDB] = useState(loadDB);
+  const [loading, setLoading] = useState(false);
+  const [groupData, setGroupData] = useState(null);
   const [view, setView] = useState("home");
   const [cg, setCG] = useState(null);
   const [cu, setCU] = useState(null);
@@ -467,34 +470,65 @@ export default function GolfPool({ onBack }) {
   }
 
   // ── GROUP ACTIONS ──────────────────────────────────────────────────────────
-  function createGroup() {
+  const loadGroup = async (code) => {
+    setLoading(true);
+    const { data: grpRow } = await supabase.from("groups").select("*").eq("id", code).single();
+    const { data: memberRows } = await supabase.from("members").select("*").eq("group_id", code);
+    if (grpRow && memberRows) {
+      const membersObj = {};
+      memberRows.forEach(m => { membersObj[m.id] = { name: m.name, picks: m.picks?.picks || [] }; });
+      setGroupData({ ...grpRow, members: membersObj });
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (view === "leaderboard" && cg) {
+      loadGroup(cg);
+      const t = setInterval(() => loadGroup(cg), 15000);
+      return () => clearInterval(t);
+    }
+  }, [view, cg]);
+
+  async function createGroup() {
     if (!grpName.trim() || !name.trim()) { flash("Enter your name and a group name.", true); return; }
+    setLoading(true);
     const code = genCode(), uid = genCode();
-    const g = { code, name: grpName.trim(), members: { [uid]: { name: name.trim(), picks: [] } }, createdAt: Date.now() };
-    persist({ ...db, groups: { ...db.groups, [code]: g } });
-    setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
+    await supabase.from("groups").insert({ id: code, pool: "golf", name: grpName.trim() });
+    await supabase.from("members").insert({ id: uid, group_id: code, name: name.trim(), picks: {} });
+    const localDB = loadDB();
+    localDB.groups[code] = { code, name: grpName.trim(), myId: uid };
+    saveDB(localDB); setDB(localDB);
+    setCG(code); setCU(uid); setPicks({}); await loadGroup(code);
+    setView("draft"); setErr(""); setLoading(false);
   }
 
-  function joinGroup() {
+  async function joinGroup() {
     const code = joinCode.trim().toUpperCase();
-    if (!db.groups[code]) { flash("Group not found. Check the code.", true); return; }
     if (!name.trim()) { flash("Enter your name.", true); return; }
+    setLoading(true);
+    const { data: grpRow } = await supabase.from("groups").select("*").eq("id", code).eq("pool", "golf").single();
+    if (!grpRow) { flash("Group not found. Check the code.", true); setLoading(false); return; }
     const uid = genCode();
-    const g = { ...db.groups[code], members: { ...db.groups[code].members, [uid]: { name: name.trim(), picks: [] } } };
-    persist({ ...db, groups: { ...db.groups, [code]: g } });
-    setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
+    await supabase.from("members").insert({ id: uid, group_id: code, name: name.trim(), picks: {} });
+    const localDB = loadDB();
+    localDB.groups[code] = { code, name: grpRow.name, myId: uid };
+    saveDB(localDB); setDB(localDB);
+    setCG(code); setCU(uid); setPicks({}); await loadGroup(code);
+    setView("draft"); setErr(""); setLoading(false);
   }
 
-  function submitPicks() {
+  async function submitPicks() {
     if (Object.keys(picks).length < 6) { flash("Select one golfer from each tier.", true); return; }
+    setLoading(true);
     const arr = TIERS.map(t => picks[t.tier]);
-    const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], picks: arr } } };
-    persist({ ...db, groups: { ...db.groups, [cg]: g } });
-    setView("leaderboard"); setErr("");
+    await supabase.from("members").update({ picks: { picks: arr } }).eq("id", cu);
+    await loadGroup(cg);
+    setView("leaderboard"); setErr(""); setLoading(false);
   }
 
   // ── DERIVED ────────────────────────────────────────────────────────────────
-  const group = cg ? db.groups[cg] : null;
+  const group = groupData || (cg ? db.groups[cg] : null);
   const scores = db.scores;
   const deadlinePassed = isDeadlinePassed();
   const tiersWithOdds = TIERS.map(t => ({ ...t, players: t.players.map(p => ({ ...p, odds: liveOdds[p.name] || p.odds })) }));
@@ -583,20 +617,15 @@ export default function GolfPool({ onBack }) {
         {Object.keys(db.groups).length > 0 && (
           <div style={S.card}>
             <div style={S.h2}>📋 Your Groups</div>
-            {Object.entries(db.groups).map(([code, g]) => {
-              const myId = Object.entries(g.members).find(([, m]) => m.picks.length > 0)?.[0];
-              const n = Object.keys(g.members).length;
-              return (
-                <div key={code} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1a1f1a", padding: "10px 14px", borderRadius: 8, border: "1px solid #1e3a1f", marginBottom: 8 }}>
-                  <div>
-                    <span style={{ color: "#c8a84b", fontWeight: "bold", marginRight: 10 }}>{g.name}</span>
-                    <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
-                    <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 12, marginLeft: 8 }}>{n} member{n !== 1 ? "s" : ""}</span>
-                  </div>
-                  <button style={S.btnGold} onClick={() => { setCG(code); setCU(myId); setView("leaderboard"); }}>Leaderboard →</button>
+            {Object.entries(db.groups).map(([code, g]) => (
+              <div key={code} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.04)", padding: "10px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 8 }}>
+                <div>
+                  <span style={{ color: "#c8a84b", fontWeight: "bold", marginRight: 10 }}>{g.name}</span>
+                  <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
                 </div>
-              );
-            })}
+                <button style={S.btnGold} onClick={async () => { setCG(code); setCU(g.myId); await loadGroup(code); setView("leaderboard"); }}>Leaderboard →</button>
+              </div>
+            ))}
           </div>
         )}
 
