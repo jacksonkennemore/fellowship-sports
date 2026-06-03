@@ -1,4 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
+import { supabase } from "./supabase";
+
+// ── SUPABASE SYNC (background only — localStorage is source of truth) ─────────
+async function sbSync(pool, groupCode, groupName, memberId, memberName, picks) {
+  try {
+    await supabase.from("groups").upsert({ id: groupCode, pool, name: groupName }, { onConflict: "id" });
+    await supabase.from("members").upsert({ id: memberId, group_id: groupCode, name: memberName, picks }, { onConflict: "id" });
+  } catch (e) { /* silent fail */ }
+}
+async function sbGetMembers(groupCode) {
+  try {
+    const { data } = await supabase.from("members").select("*").eq("group_id", groupCode);
+    return data || [];
+  } catch { return []; }
+}
 
 const DISPLAY = "'Bebas Neue', sans-serif";
 const BODY = "'Inter', sans-serif";
@@ -280,27 +295,67 @@ export default function BaseballPool({ onBack }) {
     const code = genCode(), uid = genCode();
     const g = { code, name: grpName.trim(), members: { [uid]: { name: name.trim(), srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } }, createdAt: Date.now() };
     persist({ ...db, groups: { ...db.groups, [code]: g } });
+    sbSync("baseball", code, grpName.trim(), uid, name.trim(), {});
     setCG(code); setCU(uid); setSrPicks({}); setB1Pick(null); setB1Runner(null); setB2Pick(null); setB2Runner(null); setChampPick(null);
     setView("draft"); setErr("");
   }
 
-  function joinGroup() {
+  async function joinGroup() {
     const code = joinCode.trim().toUpperCase();
-    if (!db.groups[code]) { flash("Group not found. Check the code.", true); return; }
     if (!name.trim()) { flash("Enter your name.", true); return; }
+    // Check Supabase first, then localStorage
+    let groupName = db.groups[code]?.name;
+    if (!groupName) {
+      try {
+        const { data } = await supabase.from("groups").select("*").eq("id", code).eq("pool", "baseball").single();
+        if (!data) { flash("Group not found. Check the code.", true); return; }
+        groupName = data.name;
+        // Add to local db
+        const localDB = loadDB();
+        if (!localDB.groups[code]) localDB.groups[code] = { code, name: groupName, members: {} };
+        saveDB(localDB); setDB(localDB);
+      } catch { flash("Group not found. Check the code.", true); return; }
+    }
     const uid = genCode();
-    const g = { ...db.groups[code], members: { ...db.groups[code].members, [uid]: { name: name.trim(), srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } } };
-    persist({ ...db, groups: { ...db.groups, [code]: g } });
+    const currentDB = loadDB();
+    const g = { ...(currentDB.groups[code] || { code, name: groupName, members: {} }), members: { ...(currentDB.groups[code]?.members || {}), [uid]: { name: name.trim(), srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } } };
+    persist({ ...currentDB, groups: { ...currentDB.groups, [code]: g } });
+    sbSync("baseball", code, groupName, uid, name.trim(), {});
     setCG(code); setCU(uid); setSrPicks({}); setB1Pick(null); setB1Runner(null); setB2Pick(null); setB2Runner(null); setChampPick(null);
     setView("draft"); setErr("");
   }
 
   function submitPicks() {
     if (Object.keys(srPicks).length < 8) { flash("Pick a winner for all 8 Super Regionals first.", true); return; }
-    const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], srPicks, b1Pick, b1Runner, b2Pick, b2Runner, champPick, submitted: true } } };
+    const picksData = { srPicks, b1Pick, b1Runner, b2Pick, b2Runner, champPick, submitted: true };
+    const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], ...picksData } } };
     persist({ ...db, groups: { ...db.groups, [cg]: g } });
+    // Background sync to Supabase
+    sbSync("baseball", cg, db.groups[cg].name, cu, db.groups[cg].members[cu].name, picksData);
     setView("leaderboard"); setErr("");
   }
+
+  // Merge localStorage members with Supabase members for leaderboard
+  const [sbMembers, setSbMembers] = useState({});
+  useEffect(() => {
+    if (view === "leaderboard" && cg) {
+      sbGetMembers(cg).then(rows => {
+        const merged = {};
+        rows.forEach(r => {
+          if (r.picks?.submitted) merged[r.id] = { name: r.name, ...r.picks };
+        });
+        setSbMembers(merged);
+      });
+      const t = setInterval(() => {
+        sbGetMembers(cg).then(rows => {
+          const merged = {};
+          rows.forEach(r => { if (r.picks?.submitted) merged[r.id] = { name: r.name, ...r.picks }; });
+          setSbMembers(merged);
+        });
+      }, 15000);
+      return () => clearInterval(t);
+    }
+  }, [view, cg]);
 
   function calcScore(member) {
     let pts = 0;
@@ -323,11 +378,12 @@ export default function BaseballPool({ onBack }) {
   const srComplete = Object.keys(srPicks).length === 8;
   const cwsDone    = b1Pick && b1Runner && b2Pick && b2Runner && champPick;
 
-  const leaderboard = group?.members
-    ? Object.entries(group.members).filter(([, m]) => m?.submitted)
-        .map(([id, m]) => ({ id, name: m.name, pts: calcScore(m), member: m }))
-        .sort((a, b) => b.pts - a.pts)
-    : [];
+  // Merge local + Supabase members (Supabase wins for other users)
+  const allMembers = { ...(group?.members || {}), ...sbMembers };
+
+  const leaderboard = Object.entries(allMembers).filter(([, m]) => m?.submitted)
+    .map(([id, m]) => ({ id, name: m.name, pts: calcScore(m), member: m }))
+    .sort((a, b) => b.pts - a.pts);
   const myEntry = leaderboard.find(e => e.id === cu);
 
   const Header = ({ sub }) => (

@@ -1,4 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
+import { supabase } from "./supabase";
+
+// ── SUPABASE SYNC (background only) ──────────────────────────────────────────
+async function sbSync(pool, groupCode, groupName, memberId, memberName, picks) {
+  try {
+    await supabase.from("groups").upsert({ id: groupCode, pool, name: groupName }, { onConflict: "id" });
+    await supabase.from("members").upsert({ id: memberId, group_id: groupCode, name: memberName, picks }, { onConflict: "id" });
+  } catch (e) { /* silent fail */ }
+}
+async function sbGetMembers(groupCode) {
+  try {
+    const { data } = await supabase.from("members").select("*").eq("group_id", groupCode);
+    return data || [];
+  } catch { return []; }
+}
 
 // ── 2026 US OPEN FIELD — DRAFTKINGS ODDS — BALANCED 6 TIERS ─────────────────
 // Tier sizing: T1=10, T2=10, T3=12, T4=14, T5=16, T6=20+ (most in T6)
@@ -473,16 +488,29 @@ export default function GolfPool({ onBack }) {
     const code = genCode(), uid = genCode();
     const g = { code, name: grpName.trim(), members: { [uid]: { name: name.trim(), picks: [], tiebreaker: null } }, createdAt: Date.now() };
     persist({ ...db, groups: { ...db.groups, [code]: g } });
+    sbSync("golf", code, grpName.trim(), uid, name.trim(), {});
     setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
   }
 
-  function joinGroup() {
+  async function joinGroup() {
     const code = joinCode.trim().toUpperCase();
-    if (!db.groups[code]) { flash("Group not found. Check the code.", true); return; }
     if (!name.trim()) { flash("Enter your name.", true); return; }
+    let groupName = db.groups[code]?.name;
+    if (!groupName) {
+      try {
+        const { data } = await supabase.from("groups").select("*").eq("id", code).eq("pool", "golf").single();
+        if (!data) { flash("Group not found. Check the code.", true); return; }
+        groupName = data.name;
+        const localDB = loadDB();
+        if (!localDB.groups[code]) localDB.groups[code] = { code, name: groupName, members: {} };
+        saveDB(localDB); setDB(localDB);
+      } catch { flash("Group not found. Check the code.", true); return; }
+    }
     const uid = genCode();
-    const g = { ...db.groups[code], members: { ...db.groups[code].members, [uid]: { name: name.trim(), picks: [], tiebreaker: null } } };
-    persist({ ...db, groups: { ...db.groups, [code]: g } });
+    const currentDB = loadDB();
+    const g = { ...(currentDB.groups[code] || { code, name: groupName, members: {} }), members: { ...(currentDB.groups[code]?.members || {}), [uid]: { name: name.trim(), picks: [], tiebreaker: null } } };
+    persist({ ...currentDB, groups: { ...currentDB.groups, [code]: g } });
+    sbSync("golf", code, groupName, uid, name.trim(), {});
     setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
   }
 
@@ -490,8 +518,10 @@ export default function GolfPool({ onBack }) {
     if (Object.keys(picks).length < 6) { flash("Select one golfer from each tier.", true); return; }
     if (tiebreaker === "") { flash("Enter your tiebreaker score.", true); return; }
     const arr = TIERS.map(t => picks[t.tier]);
+    const picksData = { picks: arr, tiebreaker: parseInt(tiebreaker) };
     const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], picks: arr, tiebreaker: parseInt(tiebreaker) } } };
     persist({ ...db, groups: { ...db.groups, [cg]: g } });
+    sbSync("golf", cg, db.groups[cg].name, cu, db.groups[cg].members[cu].name, picksData);
     setView("leaderboard"); setErr("");
   }
 
@@ -501,12 +531,37 @@ export default function GolfPool({ onBack }) {
   const deadlinePassed = isDeadlinePassed();
   const tiersWithOdds = TIERS.map(t => ({ ...t, players: t.players.map(p => ({ ...p, odds: liveOdds[p.name] || p.odds })) }));
 
-  const leaderboard = group
-    ? Object.entries(group.members)
-        .filter(([, m]) => m.picks.length === 6)
-        .map(([id, m]) => { const { total, top4, dropped } = calcTeam(m.picks, scores); return { id, name: m.name, total, top4, dropped, tiebreaker: m.tiebreaker ?? null }; })
-        .sort((a, b) => a.total - b.total)
-    : [];
+  const [sbMembers, setSbMembers] = useState({});
+  useEffect(() => {
+    if (view === "leaderboard" && cg) {
+      sbGetMembers(cg).then(rows => {
+        const merged = {};
+        rows.forEach(r => {
+          const p = r.picks?.picks || [];
+          if (p.length === 6) merged[r.id] = { name: r.name, picks: p, tiebreaker: r.picks?.tiebreaker ?? null };
+        });
+        setSbMembers(merged);
+      });
+      const t = setInterval(() => {
+        sbGetMembers(cg).then(rows => {
+          const merged = {};
+          rows.forEach(r => {
+            const p = r.picks?.picks || [];
+            if (p.length === 6) merged[r.id] = { name: r.name, picks: p, tiebreaker: r.picks?.tiebreaker ?? null };
+          });
+          setSbMembers(merged);
+        });
+      }, 15000);
+      return () => clearInterval(t);
+    }
+  }, [view, cg]);
+
+  const allMembers = { ...(group?.members || {}), ...sbMembers };
+
+  const leaderboard = Object.entries(allMembers)
+    .filter(([, m]) => m.picks?.length === 6)
+    .map(([id, m]) => { const { total, top4, dropped } = calcTeam(m.picks, scores); return { id, name: m.name, total, top4, dropped, tiebreaker: m.tiebreaker ?? null }; })
+    .sort((a, b) => a.total - b.total);
 
   const myEntry = leaderboard.find(e => e.id === cu);
 
