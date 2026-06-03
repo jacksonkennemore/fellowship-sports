@@ -398,19 +398,19 @@ export default function BaseballPool({ onBack }) {
   const myEntry = leaderboard.find(e => e.id === cu);
 
   const Header = ({ sub }) => (
-    <header style={{ background: "rgba(44,44,46,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 58, position: "sticky", top: 0, zIndex: 100 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 20 }}>⚾</span>
-        <div>
-          <div style={{ fontFamily: DISPLAY, fontSize: 20, letterSpacing: "0.08em", color: "#e05050", lineHeight: 1 }}>NCAA BASEBALL</div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginTop: 2, fontFamily: BODY, fontWeight: 500 }}>{sub}</div>
+    <header style={{ background: "rgba(44,44,46,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: isMobile ? "0 12px" : "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54, position: "sticky", top: 0, zIndex: 100 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{ fontSize: 18, flexShrink: 0 }}>⚾</span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: DISPLAY, fontSize: isMobile ? 15 : 20, letterSpacing: "0.06em", color: "#e05050", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>NCAA BASEBALL</div>
+          {!isMobile && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginTop: 2, fontFamily: BODY, fontWeight: 500 }}>{sub}</div>}
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {view === "leaderboard" && !deadlineSR && <button style={bBtn("#e05050")} onClick={() => setView("draft")}>Edit Picks</button>}
-        {view !== "home" && <button style={bBtn("#4ab8f0")} onClick={() => setView("home")}>Home</button>}
-        <button style={bBtn("#e05050")} onClick={() => setView("admin")}>⚙ Admin</button>
-        <button style={bBtn("#4ab8f0")} onClick={onBack}>← Fellowship</button>
+      <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+        {view === "leaderboard" && !deadlineSR && !isMobile && <button style={bBtn("#e05050")} onClick={() => setView("draft")}>Edit Picks</button>}
+        {view !== "home" && <button style={bBtn("#4ab8f0")} onClick={() => setView("home")}>{isMobile ? "Home" : "Home"}</button>}
+        <button style={bBtn("#e05050")} onClick={() => setView("admin")}>{isMobile ? "⚙" : "⚙ Admin"}</button>
+        <button style={bBtn("#4ab8f0")} onClick={onBack}>{isMobile ? "←" : "← Fellowship"}</button>
       </div>
     </header>
   );
@@ -563,7 +563,7 @@ export default function BaseballPool({ onBack }) {
 
     <div style={card}>
       <div style={{ fontFamily: DISPLAY, fontSize: 18, letterSpacing: "0.06em", color: "#e05050", marginBottom: 14 }}>SCORING</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 10 }}>
         {[["1 pt", "Per correct Super Regional pick"],
           ["1 pt", "Correct bracket runner-up (×2)"],
           ["2 pts", "Correct bracket winner (×2)"],
