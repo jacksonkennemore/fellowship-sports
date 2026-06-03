@@ -46,35 +46,11 @@ const srDeadlinePassed  = () => new Date() > SR_DEADLINE;
 const cwsDeadlinePassed = () => new Date() > CWS_DEADLINE;
 
 function genCode() { return Math.random().toString(36).substring(2, 7).toUpperCase(); }
-import { supabase } from "./supabase";
 
 const DB_KEY = "fellowship_baseball_v2";
 function loadDB() { try { return JSON.parse(localStorage.getItem(DB_KEY)) || { groups: {} }; } catch { return { groups: {} }; } }
 function saveDB(db) { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
 
-// ── SUPABASE HELPERS ──────────────────────────────────────────────────────────
-async function sbCreateGroup(code, groupName) {
-  await supabase.from("groups").insert({ id: code, pool: "baseball", name: groupName });
-}
-async function sbAddMember(groupCode, memberId, memberName) {
-  await supabase.from("members").insert({ id: memberId, group_id: groupCode, name: memberName, picks: {} });
-}
-async function sbSavePicks(memberId, picks) {
-  await supabase.from("members").update({ picks }).eq("id", memberId);
-}
-async function sbGetGroup(code) {
-  const { data: group } = await supabase.from("groups").select("*").eq("id", code).eq("pool", "baseball").single();
-  if (!group) return null;
-  const { data: members } = await supabase.from("members").select("*").eq("group_id", code);
-  const membersObj = {};
-  (members || []).forEach(m => { membersObj[m.id] = { name: m.name, ...m.picks }; });
-  return { ...group, members: membersObj };
-}
-async function sbGetAllGroups(memberIds) {
-  if (!memberIds.length) return [];
-  const { data } = await supabase.from("groups").select("*, members(*)").eq("pool", "baseball");
-  return data || [];
-}
 const ESPN_BB_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard";
 
 const bBtn = (color) => ({
@@ -133,7 +109,7 @@ function SRCard({ sr, picks, onChange, liveResults }) {
         <div style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: BODY, fontWeight: 600, letterSpacing: "0.1em" }}>VS</div>
         <TeamBtn team={sr.visitor} seed={sr.visitorSeed} selected={picks[sr.id] === sr.visitor} onClick={() => onChange(sr.id, sr.visitor)} isWinner={winner && winner.toLowerCase().includes(sr.visitor.split(" ").pop().toLowerCase())} />
       </div>
-      {picks[sr.id] && !winner && <div style={{ marginTop: 8, fontSize: 11, color: "#e05050", fontFamily: BODY, fontWeight: 600 }}>✓ {picks[sr.id]}</div>}
+      {picks[sr.id] && !winner && <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>✓ {picks[sr.id]}</div>}
       {winner && <div style={{ marginTop: 6, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>🏆 Advanced: {winner}</div>}
     </div>
   );
@@ -173,8 +149,8 @@ function CWSBracketSide({ bracketNum, srPicks, liveResults, winnerPick, runnerUp
         1st click = Winner · 2nd click = Runner-up
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        <div style={{ fontSize: 10, background: `${accentColor}15`, color: accentColor, border: `1px solid ${accentColor}30`, padding: "3px 8px", borderRadius: 4, fontFamily: BODY, fontWeight: 600 }}>Winner = 2 pts</div>
-        <div style={{ fontSize: 10, background: "rgba(200,168,75,0.12)", color: "#c8a84b", border: "1px solid rgba(200,168,75,0.25)", padding: "3px 8px", borderRadius: 4, fontFamily: BODY, fontWeight: 600 }}>Runner-up = 1 pt</div>
+        <div style={{ fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>Winner = 2 pts</div>
+        <div style={{ fontSize: 11, color: "#e05050", fontFamily: BODY, fontWeight: 600 }}>Runner-up = 1 pt</div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 14 }}>
@@ -182,24 +158,28 @@ function CWSBracketSide({ bracketNum, srPicks, liveResults, winnerPick, runnerUp
           const badge = team ? getLabel(team) : null;
           const isWinner   = winnerPick === team;
           const isRunnerUp = runnerUpPick === team;
+          const info = team ? getTeamInfo(team) : null;
           return (
             <div key={sr.id} onClick={() => handleClick(team)} style={{
               display: "flex", alignItems: "center", gap: 10,
-              background: isWinner ? `${accentColor}15` : isRunnerUp ? "rgba(200,168,75,0.1)" : "rgba(255,255,255,0.03)",
-              border: `1px solid ${isWinner ? `${accentColor}40` : isRunnerUp ? "rgba(200,168,75,0.3)" : "rgba(255,255,255,0.06)"}`,
+              background: isWinner ? `${info?.color || accentColor}20` : isRunnerUp ? `${info?.color || "#c8a84b"}20` : "rgba(255,255,255,0.03)",
+              border: `1px solid ${isWinner ? (info?.color || accentColor) : isRunnerUp ? (info?.color || "#c8a84b") : "rgba(255,255,255,0.06)"}`,
+              borderLeft: info ? `3px solid ${info.color}` : "3px solid transparent",
               borderRadius: 8, padding: "10px 14px",
               cursor: !locked && team ? "pointer" : "default", opacity: team ? 1 : 0.4,
               transition: "all 0.1s",
             }}>
+              {info?.logo && <img src={info.logo} alt={team} style={{ width: 22, height: 22, objectFit: "contain", flexShrink: 0 }} onError={e => e.target.style.display = "none"} />}
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, color: team ? (isWinner ? accentColor : isRunnerUp ? "#c8a84b" : "rgba(255,255,255,0.7)") : "rgba(255,255,255,0.5)", fontFamily: BODY, fontWeight: isWinner || isRunnerUp ? 600 : 400 }}>
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", fontFamily: BODY, fontWeight: isWinner || isRunnerUp ? 600 : 400 }}>
                   {team || `Winner: ${sr.host} vs ${sr.visitor}`}
                 </div>
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: BODY, marginTop: 1 }}>
                   {confirmed ? "✓ Confirmed" : team ? "From your SR pick" : sr.location}
                 </div>
               </div>
-              {badge && <span style={{ fontSize: 10, color: badge.color, fontWeight: 600, whiteSpace: "nowrap" }}>{badge.text}</span>}
+              {isWinner   && <span style={{ fontSize: 10, color: "#4ae84a", fontWeight: 600, whiteSpace: "nowrap" }}>● WINNER</span>}
+              {isRunnerUp && <span style={{ fontSize: 10, color: "#e05050", fontWeight: 600, whiteSpace: "nowrap" }}>● RUNNER-UP</span>}
             </div>
           );
         })}
@@ -212,15 +192,21 @@ function CWSBracketSide({ bracketNum, srPicks, liveResults, winnerPick, runnerUp
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {[[winnerPick, "Winner", accentColor, "2 pts"], [runnerUpPick, "Runner-up", "#c8a84b", "1 pt"]].map(([pick, label, color, pts]) => (
-          <div key={label} style={{ background: pick ? `${color}10` : "rgba(255,255,255,0.02)", border: `1px solid ${pick ? `${color}25` : "rgba(255,255,255,0.04)"}`, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: BODY, marginBottom: 2 }}>{label}</div>
-              <div style={{ fontSize: 13, color: pick ? color : "rgba(255,255,255,0.4)", fontWeight: 600, fontFamily: BODY }}>{pick || "Not selected"}</div>
+        {[[winnerPick, "Winner", "2 pts"], [runnerUpPick, "Runner-up", "1 pt"]].map(([pick, label, pts]) => {
+          const info = pick ? getTeamInfo(pick) : null;
+          return (
+            <div key={label} style={{ background: info ? `${info.color}20` : "rgba(255,255,255,0.02)", border: `1px solid ${info ? info.color : "rgba(255,255,255,0.04)"}`, borderLeft: info ? `3px solid ${info.color}` : undefined, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {info?.logo && <img src={info.logo} alt={pick} style={{ width: 20, height: 20, objectFit: "contain" }} onError={e => e.target.style.display = "none"} />}
+                <div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", fontFamily: BODY, marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: 13, color: pick ? "#ffffff" : "rgba(255,255,255,0.4)", fontWeight: 600, fontFamily: BODY }}>{pick || "Not selected"}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: BODY }}>{pts}</div>
             </div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: BODY }}>{pts}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -236,8 +222,6 @@ export default function BaseballPool({ onBack }) {
   const [joinCode, setJoinCode]   = useState("");
   const [err, setErr]             = useState("");
   const [msg, setMsg]             = useState("");
-  const [loading, setLoading]     = useState(false);
-  const [groupData, setGroupData] = useState(null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [adminPwInput, setAdminPwInput]   = useState("");
   const [adminPwErr, setAdminPwErr]       = useState(false);
@@ -291,63 +275,31 @@ export default function BaseballPool({ onBack }) {
     return () => clearInterval(t);
   }, [fetchScores]);
 
-  const loadGroup = async (code) => {
-    setLoading(true);
-    const { data: grpRow } = await supabase.from("groups").select("*").eq("id", code).single();
-    const { data: memberRows } = await supabase.from("members").select("*").eq("group_id", code);
-    if (grpRow && memberRows) {
-      const membersObj = {};
-      memberRows.forEach(m => { membersObj[m.id] = { name: m.name, submitted: m.picks?.submitted || false, ...m.picks }; });
-      setGroupData({ ...grpRow, members: membersObj });
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    if (view === "leaderboard" && cg) {
-      loadGroup(cg);
-      const t = setInterval(() => loadGroup(cg), 15000);
-      return () => clearInterval(t);
-    }
-  }, [view, cg]);
-
-  async function createGroup() {
+  function createGroup() {
     if (!grpName.trim() || !name.trim()) { flash("Enter your name and group name.", true); return; }
-    setLoading(true);
     const code = genCode(), uid = genCode();
-    await supabase.from("groups").insert({ id: code, pool: "baseball", name: grpName.trim() });
-    await supabase.from("members").insert({ id: uid, group_id: code, name: name.trim(), picks: {} });
-    const localDB = loadDB();
-    localDB.groups[code] = { code, name: grpName.trim(), myId: uid };
-    saveDB(localDB); setDB(localDB);
+    const g = { code, name: grpName.trim(), members: { [uid]: { name: name.trim(), srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } }, createdAt: Date.now() };
+    persist({ ...db, groups: { ...db.groups, [code]: g } });
     setCG(code); setCU(uid); setSrPicks({}); setB1Pick(null); setB1Runner(null); setB2Pick(null); setB2Runner(null); setChampPick(null);
-    await loadGroup(code);
-    setView("draft"); setErr(""); setLoading(false);
+    setView("draft"); setErr("");
   }
 
-  async function joinGroup() {
+  function joinGroup() {
     const code = joinCode.trim().toUpperCase();
+    if (!db.groups[code]) { flash("Group not found. Check the code.", true); return; }
     if (!name.trim()) { flash("Enter your name.", true); return; }
-    setLoading(true);
-    const { data: grpRow } = await supabase.from("groups").select("*").eq("id", code).eq("pool", "baseball").single();
-    if (!grpRow) { flash("Group not found. Check the code.", true); setLoading(false); return; }
     const uid = genCode();
-    await supabase.from("members").insert({ id: uid, group_id: code, name: name.trim(), picks: {} });
-    const localDB = loadDB();
-    localDB.groups[code] = { code, name: grpRow.name, myId: uid };
-    saveDB(localDB); setDB(localDB);
+    const g = { ...db.groups[code], members: { ...db.groups[code].members, [uid]: { name: name.trim(), srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } } };
+    persist({ ...db, groups: { ...db.groups, [code]: g } });
     setCG(code); setCU(uid); setSrPicks({}); setB1Pick(null); setB1Runner(null); setB2Pick(null); setB2Runner(null); setChampPick(null);
-    await loadGroup(code);
-    setView("draft"); setErr(""); setLoading(false);
+    setView("draft"); setErr("");
   }
 
-  async function submitPicks() {
+  function submitPicks() {
     if (Object.keys(srPicks).length < 8) { flash("Pick a winner for all 8 Super Regionals first.", true); return; }
-    setLoading(true);
-    const picksData = { srPicks, b1Pick, b1Runner, b2Pick, b2Runner, champPick, submitted: true };
-    await supabase.from("members").update({ picks: picksData }).eq("id", cu);
-    await loadGroup(cg);
-    setView("leaderboard"); setErr(""); setLoading(false);
+    const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], srPicks, b1Pick, b1Runner, b2Pick, b2Runner, champPick, submitted: true } } };
+    persist({ ...db, groups: { ...db.groups, [cg]: g } });
+    setView("leaderboard"); setErr("");
   }
 
   function calcScore(member) {
@@ -367,12 +319,12 @@ export default function BaseballPool({ onBack }) {
     return nameMatch(pick, winner) ? "correct" : "wrong";
   }
 
-  const group = groupData || (cg ? db.groups[cg] : null);
+  const group = cg ? db.groups[cg] : null;
   const srComplete = Object.keys(srPicks).length === 8;
   const cwsDone    = b1Pick && b1Runner && b2Pick && b2Runner && champPick;
 
-  const leaderboard = group
-    ? Object.entries(group.members).filter(([, m]) => m.submitted)
+  const leaderboard = group?.members
+    ? Object.entries(group.members).filter(([, m]) => m?.submitted)
         .map(([id, m]) => ({ id, name: m.name, pts: calcScore(m), member: m }))
         .sort((a, b) => b.pts - a.pts)
     : [];
@@ -399,11 +351,6 @@ export default function BaseballPool({ onBack }) {
   const wrap = (content, sub) => (
     <div style={{ fontFamily: BODY, minHeight: "100vh", background: "#2c2c2e", color: "#f0f2f5" }}>
       <Header sub={sub} />
-      {loading && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ color: "#e05050", fontFamily: DISPLAY, fontSize: 24, letterSpacing: "0.1em" }}>LOADING…</div>
-        </div>
-      )}
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 20px 60px" }}>{content}</div>
     </div>
   );
@@ -541,7 +488,7 @@ export default function BaseballPool({ onBack }) {
               <span style={{ color: "#e05050", fontWeight: 600, marginRight: 10, fontSize: 14 }}>{g.name}</span>
               <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
             </div>
-            <button style={bBtn("#e05050")} onClick={async () => { setCG(code); setCU(g.myId); await loadGroup(code); setView("leaderboard"); }}>Leaderboard →</button>
+            <button style={bBtn("#e05050")} onClick={() => { setCG(code); setCU(g.myId); setView("leaderboard"); }}>Leaderboard →</button>
           </div>
         ))}
       </div>
@@ -579,7 +526,7 @@ export default function BaseballPool({ onBack }) {
     <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
       {[
         { key: "sr",  label: `Phase 1: Super Regionals ${srComplete ? "✓" : `(${Object.keys(srPicks).length}/8)`}`, color: "#e05050" },
-        { key: "cws", label: `Phase 2: CWS Bracket ${cwsDone ? "✓" : "(optional)"}`, color: "#4ab8f0" },
+        { key: "cws", label: `Phase 2: CWS Bracket ${cwsDone ? "✓" : "(required)"}`, color: "#4ab8f0" },
       ].map(({ key, label, color }) => (
         <button key={key} onClick={() => setActiveTab(key)} style={{
           flex: 1, padding: 12, borderRadius: 10, cursor: "pointer", fontFamily: BODY, fontWeight: 600, fontSize: 13,
@@ -600,14 +547,9 @@ export default function BaseballPool({ onBack }) {
           <button style={bBtn("#4ab8f0")} onClick={() => setActiveTab("cws")}>Go to CWS Bracket →</button>
         </div>
       ) : (<>
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 14, fontFamily: BODY, fontWeight: 300 }}>
-            Pick the winner of all <strong style={{ color: "#f0f2f5" }}>8 Super Regionals</strong> · 1 pt each correct
+          <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 14, fontFamily: BODY, fontWeight: 300, textAlign: "center", marginBottom: 20 }}>
+            Pick the winner of all <strong style={{ color: "#f0f2f5" }}>8 Super Regionals</strong> · 1 point for each winner
           </p>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4, fontFamily: BODY }}>
-            Blue accent = CWS Bracket 1 · Red accent = CWS Bracket 2
-          </div>
-        </div>
 
         <div style={{ ...card, marginBottom: 10 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -625,11 +567,7 @@ export default function BaseballPool({ onBack }) {
           </div>
         </div>
 
-        {srComplete && (
-          <div style={{ textAlign: "center", marginTop: 4, marginBottom: 14 }}>
-            <button style={bBtn("#4ab8f0")} onClick={() => setActiveTab("cws")}>Continue to CWS Bracket →</button>
-          </div>
-        )}
+      
       </>)}
     </>)}
 
@@ -655,21 +593,27 @@ export default function BaseballPool({ onBack }) {
 
         {b1Pick && b2Pick && (
           <div style={card}>
-            <div style={{ fontFamily: DISPLAY, fontSize: 22, letterSpacing: "0.06em", color: "#c8a84b", marginBottom: 6 }}>🏆 NATIONAL CHAMPION</div>
+            <div style={{ fontFamily: DISPLAY, fontSize: 22, letterSpacing: "0.06em", color: "#e05050", marginBottom: 6 }}>🏆 NATIONAL CHAMPION</div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", fontFamily: BODY, marginBottom: 16 }}>Championship Series · June 20-22 · Best of 3 · 4 points</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {[b1Pick, b2Pick].map(team => (
-                <button key={team} onClick={() => setChampPick(team)} style={{
-                  background: champPick === team ? "rgba(200,168,75,0.15)" : "rgba(255,255,255,0.03)",
-                  color: champPick === team ? "#c8a84b" : "rgba(255,255,255,0.6)",
-                  border: `1px solid ${champPick === team ? "rgba(200,168,75,0.4)" : "rgba(255,255,255,0.06)"}`,
-                  borderRadius: 10, padding: "16px 18px", cursor: "pointer", fontFamily: BODY,
-                  fontSize: 16, fontWeight: champPick === team ? 700 : 400, textAlign: "center",
-                }}>
-                  {team}
-                  {champPick === team && <div style={{ fontSize: 11, color: "#c8a84b", marginTop: 6 }}>● YOUR CHAMPION</div>}
-                </button>
-              ))}
+              {[b1Pick, b2Pick].map(team => {
+                const info = team ? getTeamInfo(team) : null;
+                const selected = champPick === team;
+                return (
+                  <button key={team} onClick={() => setChampPick(team)} style={{
+                    background: selected ? `${info?.color}30` : "rgba(255,255,255,0.03)",
+                    color: selected ? "#ffffff" : "rgba(255,255,255,0.6)",
+                    border: `2px solid ${selected ? (info?.color || "#c8a84b") : "rgba(255,255,255,0.06)"}`,
+                    borderRadius: 10, padding: "16px 18px", cursor: "pointer", fontFamily: BODY,
+                    fontSize: 16, fontWeight: selected ? 700 : 400, textAlign: "center",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                  }}>
+                    {info?.logo && <img src={info.logo} alt={team} style={{ width: 32, height: 32, objectFit: "contain" }} onError={e => e.target.style.display = "none"} />}
+                    {team}
+                    {selected && <div style={{ fontSize: 11, color: info?.color || "#c8a84b", filter: "brightness(1.5)" }}>● YOUR CHAMPION</div>}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -680,12 +624,19 @@ export default function BaseballPool({ onBack }) {
     <div style={{ position: "sticky", bottom: 12, background: "rgba(44,44,46,0.97)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", fontFamily: BODY }}>
         {!srComplete && <span>⚾ <strong style={{ color: "#e05050" }}>{Object.keys(srPicks).length}/8</strong> Super Regional picks</span>}
-        {srComplete && !cwsDone && <span style={{ color: "#4ab8f0" }}>✓ SR done · CWS bracket optional</span>}
-        {srComplete && cwsDone  && <span style={{ color: "#4ae84a" }}>✓ All picks complete!</span>}
+        {srComplete && activeTab === "sr" && <span style={{ color: "#4ab8f0" }}>✓ 8/8 Super Regional Picks</span>}
+        {srComplete && activeTab === "cws" && !cwsDone && <span style={{ color: "#4ab8f0" }}>Complete your CWS bracket picks</span>}
+        {srComplete && activeTab === "cws" && cwsDone && <span style={{ color: "#4ae84a" }}>✓ All picks complete!</span>}
       </div>
-      <button style={{ ...bBtn(srComplete ? "#4ae84a" : "#e05050"), opacity: srComplete ? 1 : 0.4 }} onClick={submitPicks}>
-        {srComplete ? "Lock In All Picks →" : "Complete SR Picks First"}
-      </button>
+      {activeTab === "sr" ? (
+        <button style={{ ...bBtn("#4ab8f0"), opacity: srComplete ? 1 : 0.4 }} onClick={() => { if (srComplete) setActiveTab("cws"); }}>
+          Continue to CWS Bracket →
+        </button>
+      ) : (
+        <button style={{ ...bBtn("#4ab8f0"), opacity: cwsDone ? 1 : 0.4 }} onClick={() => { if (cwsDone) submitPicks(); }}>
+          Lock In All Picks →
+        </button>
+      )}
     </div>
   </>, "Make Your Picks");
 

@@ -206,7 +206,7 @@ function scoreValue(val) {
 function scoreColor(val) {
   if (val === "CUT") return "#e05050";
   if (typeof val === "number" && val < 0) return "#4aba6a";
-  if (typeof val === "number" && val === 0) return "#c8a84b";
+  if (typeof val === "number" && val === 0) return "#7a9a7a";
   return "#e0905a";
 }
 function calcTeam(picks, scores) {
@@ -283,7 +283,6 @@ export default function GolfPool({ onBack }) {
   const [cg, setCG] = useState(null);
   const [cu, setCU] = useState(null);
   const [picks, setPicks] = useState({});
-  const [tiebreaker, setTiebreaker] = useState("");
   const [name, setName] = useState("");
   const [grpName, setGrpName] = useState("");
   const [joinCode, setJoinCode] = useState("");
@@ -471,7 +470,7 @@ export default function GolfPool({ onBack }) {
   function createGroup() {
     if (!grpName.trim() || !name.trim()) { flash("Enter your name and a group name.", true); return; }
     const code = genCode(), uid = genCode();
-    const g = { code, name: grpName.trim(), members: { [uid]: { name: name.trim(), picks: [], tiebreaker: null } }, createdAt: Date.now() };
+    const g = { code, name: grpName.trim(), members: { [uid]: { name: name.trim(), picks: [] } }, createdAt: Date.now() };
     persist({ ...db, groups: { ...db.groups, [code]: g } });
     setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
   }
@@ -481,16 +480,15 @@ export default function GolfPool({ onBack }) {
     if (!db.groups[code]) { flash("Group not found. Check the code.", true); return; }
     if (!name.trim()) { flash("Enter your name.", true); return; }
     const uid = genCode();
-    const g = { ...db.groups[code], members: { ...db.groups[code].members, [uid]: { name: name.trim(), picks: [], tiebreaker: null } } };
+    const g = { ...db.groups[code], members: { ...db.groups[code].members, [uid]: { name: name.trim(), picks: [] } } };
     persist({ ...db, groups: { ...db.groups, [code]: g } });
     setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
   }
 
   function submitPicks() {
     if (Object.keys(picks).length < 6) { flash("Select one golfer from each tier.", true); return; }
-    if (tiebreaker === "") { flash("Enter your tiebreaker score.", true); return; }
     const arr = TIERS.map(t => picks[t.tier]);
-    const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], picks: arr, tiebreaker: parseInt(tiebreaker) } } };
+    const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], picks: arr } } };
     persist({ ...db, groups: { ...db.groups, [cg]: g } });
     setView("leaderboard"); setErr("");
   }
@@ -504,7 +502,7 @@ export default function GolfPool({ onBack }) {
   const leaderboard = group
     ? Object.entries(group.members)
         .filter(([, m]) => m.picks.length === 6)
-        .map(([id, m]) => { const { total, top4, dropped } = calcTeam(m.picks, scores); return { id, name: m.name, total, top4, dropped, tiebreaker: m.tiebreaker ?? null }; })
+        .map(([id, m]) => { const { total, top4, dropped } = calcTeam(m.picks, scores); return { id, name: m.name, total, top4, dropped }; })
         .sort((a, b) => a.total - b.total)
     : [];
 
@@ -585,15 +583,20 @@ export default function GolfPool({ onBack }) {
         {Object.keys(db.groups).length > 0 && (
           <div style={S.card}>
             <div style={S.h2}>📋 Your Groups</div>
-            {Object.entries(db.groups).map(([code, g]) => (
-              <div key={code} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.04)", padding: "10px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 8 }}>
-                <div>
-                  <span style={{ color: "#c8a84b", fontWeight: "bold", marginRight: 10 }}>{g.name}</span>
-                  <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
+            {Object.entries(db.groups).map(([code, g]) => {
+              const myId = Object.entries(g.members).find(([, m]) => m.picks.length > 0)?.[0];
+              const n = Object.keys(g.members).length;
+              return (
+                <div key={code} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1a1f1a", padding: "10px 14px", borderRadius: 8, border: "1px solid #1e3a1f", marginBottom: 8 }}>
+                  <div>
+                    <span style={{ color: "#c8a84b", fontWeight: "bold", marginRight: 10 }}>{g.name}</span>
+                    <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
+                    <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 12, marginLeft: 8 }}>{n} member{n !== 1 ? "s" : ""}</span>
+                  </div>
+                  <button style={S.btnGold} onClick={() => { setCG(code); setCU(myId); setView("leaderboard"); }}>Leaderboard →</button>
                 </div>
-                <button style={S.btnGold} onClick={() => { setCG(code); setCU(g.myId); setView("leaderboard"); }}>Leaderboard →</button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -832,40 +835,13 @@ export default function GolfPool({ onBack }) {
           </div>
         ))}
 
-        {Object.keys(picks).length === 6 && (
-          <div style={{ ...S.card, marginBottom: 8 }}>
-            <div style={{ fontFamily: DISPLAY, fontSize: 18, letterSpacing: "0.06em", color: "#c8a84b", marginBottom: 6 }}>🏆 TIEBREAKER</div>
-            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, marginBottom: 14, fontFamily: S.BODY, fontWeight: 300 }}>
-              Predict the winning score to par (e.g. -12). Closest to the winning score wins the tiebreaker.
-            </p>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <input
-                style={{ ...S.inp, width: 120, textAlign: "center", fontSize: 20, fontWeight: 700, color: "#c8a84b" }}
-                placeholder="-12"
-                value={tiebreaker}
-                onChange={e => {
-                  const val = e.target.value;
-                  if (val === "" || val === "-" || /^-?\d{0,3}$/.test(val)) setTiebreaker(val);
-                }}
-              />
-              <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, fontFamily: BODY }}>to par · negative = under par</span>
-            </div>
-            {tiebreaker !== "" && !isNaN(parseInt(tiebreaker)) && (
-              <div style={{ marginTop: 8, fontSize: 12, color: "#c8a84b", fontFamily: BODY }}>
-                ✓ Your prediction: <strong>{parseInt(tiebreaker) > 0 ? `+${parseInt(tiebreaker)}` : parseInt(tiebreaker)}</strong>
-              </div>
-            )}
-          </div>
-        )}
-
         <div style={{ position: "sticky", bottom: 12, background: "#1a1f1a", border: "1px solid #1e3a1f", borderRadius: 12, padding: "12px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div>
             <span style={{ color: "#c8a84b", fontWeight: "bold", fontSize: 20 }}>{Object.keys(picks).length}</span>
             <span style={{ color: "rgba(255,255,255,0.45)", fontSize: 13 }}> / 6 tiers picked</span>
-            {tiebreaker !== "" && <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 12, marginLeft: 8 }}>· Tiebreaker: {parseInt(tiebreaker) > 0 ? `+${parseInt(tiebreaker)}` : parseInt(tiebreaker)}</span>}
           </div>
           {err && <span style={{ color: "#e05050", fontSize: 12 }}>{err}</span>}
-          <button style={{ ...S.btnGold, opacity: (Object.keys(picks).length < 6 || tiebreaker === "") ? 0.4 : 1 }} onClick={submitPicks}>
+          <button style={{ ...S.btnGold, opacity: Object.keys(picks).length < 6 ? 0.4 : 1 }} onClick={submitPicks}>
             Lock In Picks →
           </button>
         </div>
@@ -925,29 +901,34 @@ export default function GolfPool({ onBack }) {
           const exp = expanded === e.id;
           const medals = ["🥇", "🥈", "🥉"];
           const totDisp = e.total === 0 ? "E" : e.total > 0 ? `+${e.total}` : `${e.total}`;
-          const totColor = e.total < 0 ? "#4aba6a" : e.total === 0 ? "#c8a84b" : "#e0905a";
+          const totColor = e.total < 0 ? "#4aba6a" : e.total === 0 ? "rgba(255,255,255,0.5)" : "#e0905a";
           const allPicks = [...e.top4.map(p => ({ ...p, counting: true })), ...e.dropped.map(p => ({ ...p, counting: false }))];
           return (
-            <div key={e.id} style={{ ...S.card, borderColor: isMe ? "rgba(200,168,75,0.3)" : "rgba(255,255,255,0.06)" }}>
+            <div key={e.id} style={{ ...S.card, borderColor: isMe ? "rgba(200,168,75,0.3)" : "rgba(255,255,255,0.06)", cursor: "pointer" }}
+              onClick={() => setExpanded(exp ? null : e.id)}>
 
               {/* Row: rank + name + total */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 30, textAlign: "center", fontSize: i < 3 ? 18 : 13, color: "rgba(255,255,255,0.4)", fontWeight: "bold" }}>
                   {i < 3 ? medals[i] : `#${i + 1}`}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 15, color: isMe ? "#c8a84b" : "#f0f2f5", fontWeight: isMe ? 700 : 400, fontFamily: BODY }}>
-                    {e.name || "Anonymous"} {isMe && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>(you)</span>}
+                    {e.name} {isMe && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>(you)</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontFamily: BODY, marginTop: 2 }}>
+                    Best 4 of 6 count · {e.dropped.length > 0 ? `${e.dropped.map(p => p.name.split(" ").pop()).join(", ")} dropped` : "all counting"}
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontFamily: DISPLAY, fontSize: 28, letterSpacing: "0.04em", color: totColor }}>{totDisp}</div>
                   <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: BODY, letterSpacing: "0.1em", textTransform: "uppercase" }}>Total</div>
                 </div>
+                <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 12 }}>{exp ? "▲" : "▼"}</div>
               </div>
 
               {/* Golfer scores — always visible */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginTop: 12 }}>
                 {allPicks.map(p => (
                   <div key={p.name} style={{
                     background: p.counting ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)",
@@ -967,12 +948,24 @@ export default function GolfPool({ onBack }) {
                 ))}
               </div>
 
-              {/* Tiebreaker bottom right */}
-              {e.tiebreaker != null && (
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "flex-end" }}>
-                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontFamily: BODY }}>
-                    Tiebreaker: <strong style={{ color: "#c8a84b" }}>{e.tiebreaker > 0 ? `+${e.tiebreaker}` : e.tiebreaker}</strong>
-                  </span>
+              {/* Expanded: cumulative breakdown */}
+              {exp && (
+                <div style={{ marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", fontFamily: BODY, textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                      Cumulative Score (best 4)
+                    </div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      {e.top4.map((p, idx) => (
+                        <span key={p.name} style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", fontFamily: BODY }}>
+                          <span style={{ color: scoreColor(p.raw) }}>{scoreDisplay(p.raw)}</span>
+                          {idx < e.top4.length - 1 && <span style={{ color: "rgba(255,255,255,0.2)", margin: "0 4px" }}>+</span>}
+                        </span>
+                      ))}
+                      <span style={{ color: "rgba(255,255,255,0.2)", margin: "0 4px" }}>=</span>
+                      <span style={{ fontFamily: DISPLAY, fontSize: 20, color: totColor, letterSpacing: "0.04em" }}>{totDisp}</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
