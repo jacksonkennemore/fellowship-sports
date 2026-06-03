@@ -575,7 +575,7 @@ export default function BaseballPool({ onBack }) {
         ))}
       </div>
     </div>
-  </>, "Fellowship Sports · Road to Omaha 2026");
+  </>, isMobile ? "Road to Omaha 2026" : "Fellowship Sports · Road to Omaha 2026");
 
   // ── DRAFT ─────────────────────────────────────────────────────────────────
   if (view === "draft") return wrap(<>
