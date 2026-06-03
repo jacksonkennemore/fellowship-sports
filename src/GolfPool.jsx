@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 function useIsMobile() {
-  const [mobile, setMobile] = useState(window.innerWidth < 600);
+  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 600);
   useEffect(() => {
     const handler = () => setMobile(window.innerWidth < 600);
     window.addEventListener("resize", handler);
@@ -283,7 +283,7 @@ const S = {
   hdr: { background: "rgba(44,44,46,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 58, position: "sticky", top: 0, zIndex: 100 },
   logoTxt: { fontFamily: DISPLAY, fontSize: 20, letterSpacing: "0.08em", color: "#c8a84b", lineHeight: 1 },
   logoSub: { fontSize: 10, color: "rgba(255,255,255,0.2)", textTransform: "uppercase", letterSpacing: "0.12em", marginTop: 2, fontFamily: BODY, fontWeight: 500 },
-  main: { maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px 60px" : "24px 16px 60px" },
+  main: { maxWidth: 820, margin: "0 auto", padding: "24px 16px 60px" },
   card: { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 22, marginBottom: 14 },
   h2: { fontFamily: DISPLAY, fontSize: 18, letterSpacing: "0.06em", color: "#c8a84b", marginBottom: 14 },
   lbl: { fontSize: 10, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 6, display: "block", fontWeight: 600 },
