@@ -1,5 +1,30 @@
 import { useState, useEffect, useCallback } from "react";
 
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return mobile;
+}
+import { supabase } from "./supabase";
+
+// ── SUPABASE SYNC (background only — localStorage is source of truth) ─────────
+async function sbSync(pool, groupCode, groupName, memberId, memberName, picks) {
+  try {
+    await supabase.from("groups").upsert({ id: groupCode, pool, name: groupName }, { onConflict: "id" });
+    await supabase.from("members").upsert({ id: memberId, group_id: groupCode, name: memberName, picks }, { onConflict: "id" });
+  } catch (e) { /* silent fail */ }
+}
+async function sbGetMembers(groupCode) {
+  try {
+    const { data } = await supabase.from("members").select("*").eq("group_id", groupCode);
+    return data || [];
+  } catch { return []; }
+}
+
 const DISPLAY = "'Bebas Neue', sans-serif";
 const BODY = "'Inter', sans-serif";
 
@@ -213,6 +238,7 @@ function CWSBracketSide({ bracketNum, srPicks, liveResults, winnerPick, runnerUp
 }
 
 export default function BaseballPool({ onBack }) {
+  const isMobile = useIsMobile();
   const [db, setDB]               = useState(loadDB);
   const [view, setView]           = useState("home");
   const [cg, setCG]               = useState(null);
@@ -280,27 +306,67 @@ export default function BaseballPool({ onBack }) {
     const code = genCode(), uid = genCode();
     const g = { code, name: grpName.trim(), members: { [uid]: { name: name.trim(), srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } }, createdAt: Date.now() };
     persist({ ...db, groups: { ...db.groups, [code]: g } });
+    sbSync("baseball", code, grpName.trim(), uid, name.trim(), {});
     setCG(code); setCU(uid); setSrPicks({}); setB1Pick(null); setB1Runner(null); setB2Pick(null); setB2Runner(null); setChampPick(null);
     setView("draft"); setErr("");
   }
 
-  function joinGroup() {
+  async function joinGroup() {
     const code = joinCode.trim().toUpperCase();
-    if (!db.groups[code]) { flash("Group not found. Check the code.", true); return; }
     if (!name.trim()) { flash("Enter your name.", true); return; }
+    // Check Supabase first, then localStorage
+    let groupName = db.groups[code]?.name;
+    if (!groupName) {
+      try {
+        const { data } = await supabase.from("groups").select("*").eq("id", code).eq("pool", "baseball").single();
+        if (!data) { flash("Group not found. Check the code.", true); return; }
+        groupName = data.name;
+        // Add to local db
+        const localDB = loadDB();
+        if (!localDB.groups[code]) localDB.groups[code] = { code, name: groupName, members: {} };
+        saveDB(localDB); setDB(localDB);
+      } catch { flash("Group not found. Check the code.", true); return; }
+    }
     const uid = genCode();
-    const g = { ...db.groups[code], members: { ...db.groups[code].members, [uid]: { name: name.trim(), srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } } };
-    persist({ ...db, groups: { ...db.groups, [code]: g } });
+    const currentDB = loadDB();
+    const g = { ...(currentDB.groups[code] || { code, name: groupName, members: {} }), members: { ...(currentDB.groups[code]?.members || {}), [uid]: { name: name.trim(), srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } } };
+    persist({ ...currentDB, groups: { ...currentDB.groups, [code]: g } });
+    sbSync("baseball", code, groupName, uid, name.trim(), {});
     setCG(code); setCU(uid); setSrPicks({}); setB1Pick(null); setB1Runner(null); setB2Pick(null); setB2Runner(null); setChampPick(null);
     setView("draft"); setErr("");
   }
 
   function submitPicks() {
     if (Object.keys(srPicks).length < 8) { flash("Pick a winner for all 8 Super Regionals first.", true); return; }
-    const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], srPicks, b1Pick, b1Runner, b2Pick, b2Runner, champPick, submitted: true } } };
+    const picksData = { srPicks, b1Pick, b1Runner, b2Pick, b2Runner, champPick, submitted: true };
+    const g = { ...db.groups[cg], members: { ...db.groups[cg].members, [cu]: { ...db.groups[cg].members[cu], ...picksData } } };
     persist({ ...db, groups: { ...db.groups, [cg]: g } });
+    // Background sync to Supabase
+    sbSync("baseball", cg, db.groups[cg].name, cu, db.groups[cg].members[cu].name, picksData);
     setView("leaderboard"); setErr("");
   }
+
+  // Merge localStorage members with Supabase members for leaderboard
+  const [sbMembers, setSbMembers] = useState({});
+  useEffect(() => {
+    if (view === "leaderboard" && cg) {
+      sbGetMembers(cg).then(rows => {
+        const merged = {};
+        rows.forEach(r => {
+          if (r.picks?.submitted) merged[r.id] = { name: r.name, ...r.picks };
+        });
+        setSbMembers(merged);
+      });
+      const t = setInterval(() => {
+        sbGetMembers(cg).then(rows => {
+          const merged = {};
+          rows.forEach(r => { if (r.picks?.submitted) merged[r.id] = { name: r.name, ...r.picks }; });
+          setSbMembers(merged);
+        });
+      }, 15000);
+      return () => clearInterval(t);
+    }
+  }, [view, cg]);
 
   function calcScore(member) {
     let pts = 0;
@@ -323,11 +389,12 @@ export default function BaseballPool({ onBack }) {
   const srComplete = Object.keys(srPicks).length === 8;
   const cwsDone    = b1Pick && b1Runner && b2Pick && b2Runner && champPick;
 
-  const leaderboard = group?.members
-    ? Object.entries(group.members).filter(([, m]) => m?.submitted)
-        .map(([id, m]) => ({ id, name: m.name, pts: calcScore(m), member: m }))
-        .sort((a, b) => b.pts - a.pts)
-    : [];
+  // Merge local + Supabase members (Supabase wins for other users)
+  const allMembers = { ...(group?.members || {}), ...sbMembers };
+
+  const leaderboard = Object.entries(allMembers).filter(([, m]) => m?.submitted)
+    .map(([id, m]) => ({ id, name: m.name, pts: calcScore(m), member: m }))
+    .sort((a, b) => b.pts - a.pts);
   const myEntry = leaderboard.find(e => e.id === cu);
 
   const Header = ({ sub }) => (
@@ -351,7 +418,7 @@ export default function BaseballPool({ onBack }) {
   const wrap = (content, sub) => (
     <div style={{ fontFamily: BODY, minHeight: "100vh", background: "#2c2c2e", color: "#f0f2f5" }}>
       <Header sub={sub} />
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 20px 60px" }}>{content}</div>
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: isMobile ? "16px 12px 60px" : "28px 20px 60px" }}>{content}</div>
     </div>
   );
 
@@ -458,7 +525,7 @@ export default function BaseballPool({ onBack }) {
     {err && <div style={{ color: "#e05050", background: "rgba(224,80,80,0.08)", border: "1px solid rgba(224,80,80,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13 }}>{err}</div>}
     {msg && <div style={{ color: "#4ae84a", background: "rgba(74,232,74,0.06)", border: "1px solid rgba(74,232,74,0.15)", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13 }}>{msg}</div>}
 
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
       <div style={card}>
         <div style={{ fontFamily: DISPLAY, fontSize: 18, letterSpacing: "0.06em", color: "#e05050", marginBottom: 6 }}>🆕 Create a Group</div>
         <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, marginBottom: 14, fontFamily: BODY, fontWeight: 300 }}>Start a pool and share the invite code with friends.</p>
@@ -552,7 +619,7 @@ export default function BaseballPool({ onBack }) {
           </p>
 
         <div style={{ ...card, marginBottom: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
             {SUPER_REGIONALS.filter(sr => sr.cwsBracket === 1).map(sr => (
               <SRCard key={sr.id} sr={sr} picks={srPicks} onChange={(id, t) => setSrPicks(p => ({ ...p, [id]: t }))} liveResults={liveResults} />
             ))}
@@ -560,7 +627,7 @@ export default function BaseballPool({ onBack }) {
         </div>
 
         <div style={card}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
             {SUPER_REGIONALS.filter(sr => sr.cwsBracket === 2).map(sr => (
               <SRCard key={sr.id} sr={sr} picks={srPicks} onChange={(id, t) => setSrPicks(p => ({ ...p, [id]: t }))} liveResults={liveResults} />
             ))}
@@ -586,7 +653,7 @@ export default function BaseballPool({ onBack }) {
           <div style={{ fontFamily: DISPLAY, fontSize: 22, color: "#4ab8f0", letterSpacing: "0.06em" }}>CWS BRACKET LOCKED</div>
         </div>
       ) : (<>
-        <div style={{ display: "flex", gap: 14, marginBottom: 14 }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 14, marginBottom: 14 }}>
           <CWSBracketSide bracketNum={1} srPicks={srPicks} liveResults={liveResults} winnerPick={b1Pick} runnerUpPick={b1Runner} onPickWinner={setB1Pick} onPickRunnerUp={setB1Runner} accentColor="#4ab8f0" locked={deadlineCWS} />
           <CWSBracketSide bracketNum={2} srPicks={srPicks} liveResults={liveResults} winnerPick={b2Pick} runnerUpPick={b2Runner} onPickWinner={setB2Pick} onPickRunnerUp={setB2Runner} accentColor="#e05050" locked={deadlineCWS} />
         </div>
@@ -704,7 +771,7 @@ export default function BaseballPool({ onBack }) {
 
           {/* SR picks grid — always visible */}
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6, fontFamily: BODY, fontWeight: 600 }}>Super Regional Picks</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 5 }}>
             {SUPER_REGIONALS.map(sr => {
               const pick   = e.member.srPicks?.[sr.id];
               const result = getSRPickResult(pick, sr.id);
@@ -733,7 +800,7 @@ export default function BaseballPool({ onBack }) {
 
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, fontFamily: BODY, fontWeight: 600 }}>CWS Bracket Picks</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(5,1fr)", gap: 6 }}>
               {[["B1 Winner", e.member.b1Pick, "2pts"],
                 ["B1 Runner-up", e.member.b1Runner, "1pt"],
                 ["B2 Winner", e.member.b2Pick, "2pts"],
