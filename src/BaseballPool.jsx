@@ -403,7 +403,7 @@ export default function BaseballPool({ onBack }) {
         <span style={{ fontSize: 18, flexShrink: 0 }}>⚾</span>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: DISPLAY, fontSize: isMobile ? 15 : 20, letterSpacing: "0.06em", color: "#e05050", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>NCAA BASEBALL</div>
-          {!isMobile && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginTop: 2, fontFamily: BODY, fontWeight: 500 }}>{sub}</div>}
+          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: 2, fontFamily: BODY, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>
         </div>
       </div>
       <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
