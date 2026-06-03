@@ -1,4 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(window.innerWidth < 600);
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth < 600);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return mobile;
+}
 import { supabase } from "./supabase";
 
 // ── SUPABASE SYNC (background only) ──────────────────────────────────────────
@@ -273,7 +283,7 @@ const S = {
   hdr: { background: "rgba(44,44,46,0.97)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 58, position: "sticky", top: 0, zIndex: 100 },
   logoTxt: { fontFamily: DISPLAY, fontSize: 20, letterSpacing: "0.08em", color: "#c8a84b", lineHeight: 1 },
   logoSub: { fontSize: 10, color: "rgba(255,255,255,0.2)", textTransform: "uppercase", letterSpacing: "0.12em", marginTop: 2, fontFamily: BODY, fontWeight: 500 },
-  main: { maxWidth: 820, margin: "0 auto", padding: "24px 16px 60px" },
+  main: { maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px 60px" : "24px 16px 60px" },
   card: { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 22, marginBottom: 14 },
   h2: { fontFamily: DISPLAY, fontSize: 18, letterSpacing: "0.06em", color: "#c8a84b", marginBottom: 14 },
   lbl: { fontSize: 10, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 6, display: "block", fontWeight: 600 },
@@ -293,6 +303,7 @@ const S = {
 // ── US OPEN TROPHY SVG — drawn to match the iconic USGA silver loving cup ───
 
 export default function GolfPool({ onBack }) {
+  const isMobile = useIsMobile();
   const [db, setDB] = useState(loadDB);
   const [view, setView] = useState("home");
   const [cg, setCG] = useState(null);
@@ -616,7 +627,7 @@ export default function GolfPool({ onBack }) {
         {err && <div style={S.err}>{err}</div>}
         {msg && <div style={S.ok}>{msg}</div>}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
           <div style={S.card}>
             <div style={S.h2}>🆕 Create a Group</div>
             <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, marginBottom: 14 }}>Start a pool and share the invite code.</p>
@@ -654,7 +665,7 @@ export default function GolfPool({ onBack }) {
 
         <div style={S.card}>
           <div style={{ ...S.h2, marginBottom: 14 }}>SCORING</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 10 }}>
             {[["Score", "Cumulative tournament score taken for each golfer"],
               ["+20", "Missed cut penalty per golfer"],
               ["4 of 6", "Only best 4 scores count"],
@@ -1002,7 +1013,7 @@ export default function GolfPool({ onBack }) {
               </div>
 
               {/* Golfer scores — always visible */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(3,1fr)", gap: 6 }}>
                 {allPicks.map(p => (
                   <div key={p.name} style={{
                     background: p.counting ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)",
