@@ -942,30 +942,95 @@ export default function BaseballPool({ onBack, user }) {
           {exp && (
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
 
-              {/* SR picks grid */}
+              {/* SR picks as mini matchup cards */}
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6, fontFamily: BODY, fontWeight: 600 }}>Super Regional Picks</div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 5, marginBottom: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 12 }}>
                 {SUPER_REGIONALS.map(sr => {
-                  const pick   = e.member.srPicks?.[sr.id];
+                  const pick = e.member.srPicks?.[sr.id];
                   const result = getSRPickResult(pick, sr.id);
-                  const info   = pick ? getTeamInfo(pick) : { color: "#444", logo: null };
-                  const bgColor = result === "correct" ? "rgba(74,232,74,0.08)" : result === "wrong" ? "rgba(224,80,80,0.08)" : "rgba(255,255,255,0.03)";
-                  const borderColor = result === "correct" ? "rgba(74,232,74,0.2)" : result === "wrong" ? "rgba(224,80,80,0.15)" : "rgba(255,255,255,0.05)";
-                  const textColor = result === "correct" ? "#4ae84a" : result === "wrong" ? "#e05050" : "rgba(255,255,255,0.6)";
+                  const pickInfo = pick ? getTeamInfo(pick) : null;
+                  const hostInfo = getTeamInfo(sr.host);
+                  const visitorInfo = getTeamInfo(sr.visitor);
+                  const game = liveGames?.[sr.id];
+                  const isLive = game?.statusState === "in";
+                  const isFinal = game?.completed;
+
+                  const getScore = (teamName) => {
+                    if (!game) return null;
+                    const isHome = game.homeTeam?.toLowerCase().includes(teamName.split(" ").pop().toLowerCase());
+                    return isHome ? game.homeScore : game.awayScore;
+                  };
+
                   return (
-                    <div key={sr.id} style={{ background: bgColor, border: `1px solid ${borderColor}`, borderLeft: pick ? `3px solid ${info.color}` : `3px solid rgba(255,255,255,0.08)`, borderRadius: 7, padding: "6px 8px" }}>
-                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: BODY, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.08em" }}>{sr.host.split(" ").pop()}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-                        {info.logo && pick && <img src={info.logo} alt={pick} style={{ width: 14, height: 14, objectFit: "contain" }} onError={e => e.target.style.display = "none"} />}
-                        <div style={{ fontSize: 11, color: textColor, fontFamily: BODY, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {pick ? pick.split(" ").pop() : "—"}
-                          {result === "correct" && " ✓"}
-                          {result === "wrong" && " ✗"}
+                    <div key={sr.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderLeft: pickInfo ? `3px solid ${pickInfo.color}` : "3px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 12px" }}>
+                      {/* Header */}
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: BODY }}>{sr.location} · {sr.g1}</div>
+                        {isLive && <div style={{ fontSize: 10, color: "#4ae84a", fontWeight: 600, fontFamily: BODY }}>● LIVE</div>}
+                        {isFinal && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: BODY }}>FINAL</div>}
+                      </div>
+
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        {/* Teams + scores */}
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            {hostInfo.logo && <img src={hostInfo.logo} alt={sr.host} style={{ width: 16, height: 16, objectFit: "contain" }} onError={ev => ev.target.style.display = "none"} />}
+                            <span style={{ fontSize: 12, fontFamily: BODY, color: pick === sr.host ? "#ffffff" : "rgba(255,255,255,0.65)", fontWeight: pick === sr.host ? 600 : 400, flex: 1 }}>
+                              {sr.hostSeed && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginRight: 3 }}>#{sr.hostSeed}</span>}
+                              {sr.host}
+                            </span>
+                            {(isLive || isFinal) && <span style={{ fontSize: 13, fontWeight: 700, color: "#f0f2f5" }}>{getScore(sr.host)}</span>}
+                          </div>
+                          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", fontFamily: BODY, paddingLeft: 22 }}>vs</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            {visitorInfo.logo && <img src={visitorInfo.logo} alt={sr.visitor} style={{ width: 16, height: 16, objectFit: "contain" }} onError={ev => ev.target.style.display = "none"} />}
+                            <span style={{ fontSize: 12, fontFamily: BODY, color: pick === sr.visitor ? "#ffffff" : "rgba(255,255,255,0.65)", fontWeight: pick === sr.visitor ? 600 : 400, flex: 1 }}>
+                              {sr.visitorSeed && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginRight: 3 }}>#{sr.visitorSeed}</span>}
+                              {sr.visitor}
+                            </span>
+                            {(isLive || isFinal) && <span style={{ fontSize: 13, fontWeight: 700, color: "#f0f2f5" }}>{getScore(sr.visitor)}</span>}
+                          </div>
+                        </div>
+
+                        {/* Pick circle */}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, minWidth: 52 }}>
+                          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: BODY, textTransform: "uppercase", letterSpacing: "0.08em" }}>Pick</div>
+                          {pick ? (
+                            <>
+                              <div style={{ width: 32, height: 32, borderRadius: "50%", background: pickInfo ? `${pickInfo.color}22` : "rgba(255,255,255,0.05)", border: `2px solid ${pickInfo?.color || "rgba(255,255,255,0.2)"}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                                {pickInfo?.logo
+                                  ? <img src={pickInfo.logo} alt={pick} style={{ width: 22, height: 22, objectFit: "contain" }} onError={ev => ev.target.style.display = "none"} />
+                                  : <span style={{ fontSize: 9, color: pickInfo?.color, fontWeight: 600 }}>{pick.split(" ").pop().slice(0,3).toUpperCase()}</span>
+                                }
+                              </div>
+                              <div style={{ fontSize: 10, color: result === "correct" ? "#4ae84a" : result === "wrong" ? "#e05050" : pickInfo?.color || "rgba(255,255,255,0.5)", fontWeight: 600, fontFamily: BODY, textAlign: "center", lineHeight: 1.2 }}>
+                                {pick.split(" ").pop()}
+                                {result === "correct" && " ✓"}
+                                {result === "wrong" && " ✗"}
+                              </div>
+                            </>
+                          ) : (
+                            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(255,255,255,0.03)", border: "1.5px dashed rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <span style={{ fontSize: 14, color: "rgba(255,255,255,0.15)" }}>?</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      {result === "pending" && pick && <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", fontFamily: BODY }}>pending</div>}
-                      {result === "correct" && <div style={{ fontSize: 9, color: "#4ae84a", fontFamily: BODY }}>+1 pt</div>}
-                      {result === "wrong" && <div style={{ fontSize: 9, color: "#e05050", fontFamily: BODY }}>0 pts</div>}
+
+                      {/* Live inning/outs/bases */}
+                      {isLive && (
+                        <div style={{ marginTop: 8, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 10, color: "#4ae84a", fontWeight: 600, fontFamily: BODY }}>{game.isTopInning ? "▲" : "▼"}{game.inning}</div>
+                          <div style={{ display: "flex", gap: 3 }}>
+                            {[0,1,2].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i < game.outs ? "#e05050" : "rgba(255,255,255,0.15)" }} />)}
+                          </div>
+                          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: BODY }}>{game.outs} out{game.outs !== 1 ? "s" : ""}</span>
+                          <div style={{ marginLeft: "auto", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 2, width: 26 }}>
+                            <div /><div style={{ width: 8, height: 8, transform: "rotate(45deg)", background: game.onSecond ? "#f0a500" : "rgba(255,255,255,0.15)", borderRadius: 1 }} /><div />
+                            <div style={{ width: 8, height: 8, transform: "rotate(45deg)", background: game.onThird ? "#f0a500" : "rgba(255,255,255,0.15)", borderRadius: 1 }} /><div /><div style={{ width: 8, height: 8, transform: "rotate(45deg)", background: game.onFirst ? "#f0a500" : "rgba(255,255,255,0.15)", borderRadius: 1 }} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
