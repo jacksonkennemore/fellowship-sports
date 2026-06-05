@@ -302,7 +302,7 @@ const S = {
 
 // ── US OPEN TROPHY SVG — drawn to match the iconic USGA silver loving cup ───
 
-export default function GolfPool({ onBack }) {
+export default function GolfPool({ onBack, user }) {
   const isMobile = useIsMobile();
   const [db, setDB] = useState(loadDB);
   const [view, setView] = useState("home");
@@ -496,16 +496,20 @@ export default function GolfPool({ onBack }) {
   // ── GROUP ACTIONS ──────────────────────────────────────────────────────────
   function createGroup() {
     if (!grpName.trim() || !name.trim()) { flash("Enter your name and a group name.", true); return; }
-    const code = genCode(), uid = genCode();
-    const g = { code, name: grpName.trim(), members: { [uid]: { name: name.trim(), picks: [], tiebreaker: null } }, createdAt: Date.now() };
+    const code = genCode();
+    const uid = user?.id || genCode();
+    const memberName = user?.user_metadata?.full_name || name.trim();
+    const g = { code, name: grpName.trim(), members: { [uid]: { name: memberName, picks: [], tiebreaker: null } }, createdAt: Date.now() };
     persist({ ...db, groups: { ...db.groups, [code]: g } });
-    sbSync("golf", code, grpName.trim(), uid, name.trim(), {});
+    sbSync("golf", code, grpName.trim(), uid, memberName, {});
     setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
   }
 
   async function joinGroup() {
     const code = joinCode.trim().toUpperCase();
     if (!name.trim()) { flash("Enter your name.", true); return; }
+    const uid = user?.id || genCode();
+    const memberName = user?.user_metadata?.full_name || name.trim();
     let groupName = db.groups[code]?.name;
     if (!groupName) {
       try {
@@ -517,11 +521,10 @@ export default function GolfPool({ onBack }) {
         saveDB(localDB); setDB(localDB);
       } catch { flash("Group not found. Check the code.", true); return; }
     }
-    const uid = genCode();
     const currentDB = loadDB();
-    const g = { ...(currentDB.groups[code] || { code, name: groupName, members: {} }), members: { ...(currentDB.groups[code]?.members || {}), [uid]: { name: name.trim(), picks: [], tiebreaker: null } } };
+    const g = { ...(currentDB.groups[code] || { code, name: groupName, members: {} }), members: { ...(currentDB.groups[code]?.members || {}), [uid]: { name: memberName, picks: [], tiebreaker: null } } };
     persist({ ...currentDB, groups: { ...currentDB.groups, [code]: g } });
-    sbSync("golf", code, groupName, uid, name.trim(), {});
+    sbSync("golf", code, groupName, uid, memberName, {});
     setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
   }
 
