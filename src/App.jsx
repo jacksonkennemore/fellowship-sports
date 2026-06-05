@@ -122,6 +122,7 @@ function SignInPage({ onAuth }) {
   const [name, setName] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   const inp = {
     background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
@@ -176,7 +177,12 @@ function SignInPage({ onAuth }) {
             </div>
             <div>
               <label style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 6, display: "block", fontWeight: 600 }}>Password</label>
-              <input style={inp} type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} autoComplete={mode === "signup" ? "new-password" : "current-password"} />
+              <div style={{ position: "relative" }}>
+                <input style={{ ...inp, paddingRight: 44 }} type={showPw ? "text" : "password"} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} autoComplete={mode === "signup" ? "new-password" : "current-password"} />
+                <button onClick={() => setShowPw(p => !p)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, padding: 4 }}>
+                  {showPw ? "🙈" : "👁"}
+                </button>
+              </div>
             </div>
           </div>
 
