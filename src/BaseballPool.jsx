@@ -12,11 +12,31 @@ function useIsMobile() {
 import { supabase } from "./supabase";
 
 // ── SUPABASE SYNC (background only — localStorage is source of truth) ─────────
-async function sbSync(pool, groupCode, groupName, memberId, memberName, picks) {
+async function sbSync(pool, groupCode, groupName, memberId, memberName, picks, createdBy = null) {
   try {
-    await supabase.from("groups").upsert({ id: groupCode, pool, name: groupName }, { onConflict: "id" });
+    const groupData = { id: groupCode, pool, name: groupName };
+    if (createdBy) groupData.created_by = createdBy;
+    await supabase.from("groups").upsert(groupData, { onConflict: "id" });
     await supabase.from("members").upsert({ id: memberId, group_id: groupCode, name: memberName, picks }, { onConflict: "id" });
   } catch (e) { /* silent fail */ }
+}
+
+async function sbDeleteMember(memberId) {
+  try { await supabase.from("members").delete().eq("id", memberId); } catch {}
+}
+
+async function sbDeleteGroup(groupCode) {
+  try {
+    await supabase.from("members").delete().eq("group_id", groupCode);
+    await supabase.from("groups").delete().eq("id", groupCode);
+  } catch {}
+}
+
+async function sbLoadUserGroups(userId, pool) {
+  try {
+    const { data } = await supabase.from("members").select("group_id, groups(id, name, pool, created_by)").eq("id", userId);
+    return (data || []).filter(r => r.groups?.pool === pool).map(r => r.groups);
+  } catch { return []; }
 }
 async function sbGetMembers(groupCode) {
   try {
@@ -391,18 +411,14 @@ export default function BaseballPool({ onBack, user }) {
   // Load user's groups from Supabase when logged in
   useEffect(() => {
     if (!user?.id) return;
-    supabase.from("members").select("group_id, groups(id, name, pool)").eq("id", user.id)
-      .then(({ data }) => {
-        if (!data) return;
-        const localDB = loadDB();
-        data.forEach(row => {
-          const g = row.groups;
-          if (g?.pool === "baseball" && !localDB.groups[g.id]) {
-            localDB.groups[g.id] = { code: g.id, name: g.name, myId: user.id, members: {} };
-          }
-        });
-        saveDB(localDB); setDB(localDB);
+    sbLoadUserGroups(user.id, "baseball").then(groups => {
+      if (!groups.length) return;
+      const localDB = loadDB();
+      groups.forEach(g => {
+        localDB.groups[g.id] = { code: g.id, name: g.name, myId: user.id, createdBy: g.created_by, members: {} };
       });
+      saveDB(localDB); setDB(localDB);
+    });
   }, [user?.id]);
 
   const fetchScores = useCallback(async (silent = false) => {
@@ -472,7 +488,7 @@ export default function BaseballPool({ onBack, user }) {
     const memberName = user?.user_metadata?.full_name || name.trim();
     const g = { code, name: grpName.trim(), members: { [uid]: { name: memberName, srPicks: {}, b1Pick: null, b1Runner: null, b2Pick: null, b2Runner: null, champPick: null, submitted: false } }, createdAt: Date.now() };
     persist({ ...db, groups: { ...db.groups, [code]: g } });
-    sbSync("baseball", code, grpName.trim(), uid, memberName, {});
+    sbSync("baseball", code, grpName.trim(), uid, memberName, {}, uid);
     setCG(code); setCU(uid); setSrPicks({}); setB1Pick(null); setB1Runner(null); setB2Pick(null); setB2Runner(null); setChampPick(null);
     setView("draft"); setErr("");
   }
@@ -714,15 +730,44 @@ export default function BaseballPool({ onBack, user }) {
     {Object.keys(db.groups).length > 0 && (
       <div style={card}>
         <div style={{ fontFamily: DISPLAY, fontSize: 18, letterSpacing: "0.06em", color: "#e05050", marginBottom: 14 }}>YOUR GROUPS</div>
-        {Object.entries(db.groups).map(([code, g]) => (
-          <div key={code} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.06)", padding: "11px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", marginBottom: 8 }}>
-            <div>
-              <span style={{ color: "#e05050", fontWeight: 600, marginRight: 10, fontSize: 14 }}>{g.name}</span>
-              <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
+        {Object.entries(db.groups).map(([code, g]) => {
+          const isCreator = g.createdBy === user?.id || g.myId === user?.id;
+          return (
+            <div key={code} style={{ background: "rgba(255,255,255,0.06)", padding: "12px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div>
+                  <span style={{ color: "#e05050", fontWeight: 600, marginRight: 10, fontSize: 14 }}>{g.name}</span>
+                  <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
+                </div>
+                <button style={bBtn("#e05050")} onClick={() => { setCG(code); setCU(g.myId); setView("leaderboard"); }}>Leaderboard →</button>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {g.myId && (
+                  <button onClick={async () => {
+                    if (!confirm("Remove your entry from this group?")) return;
+                    await sbDeleteMember(g.myId);
+                    const localDB = loadDB();
+                    delete localDB.groups[code];
+                    saveDB(localDB); setDB(localDB);
+                  }} style={{ background: "none", border: "1px solid rgba(224,80,80,0.2)", borderRadius: 6, color: "rgba(224,80,80,0.6)", fontSize: 11, cursor: "pointer", fontFamily: BODY, padding: "4px 10px" }}>
+                    Remove my entry
+                  </button>
+                )}
+                {isCreator && (
+                  <button onClick={async () => {
+                    if (!confirm(`Delete group "${g.name}" for everyone? This cannot be undone.`)) return;
+                    await sbDeleteGroup(code);
+                    const localDB = loadDB();
+                    delete localDB.groups[code];
+                    saveDB(localDB); setDB(localDB);
+                  }} style={{ background: "none", border: "1px solid rgba(224,80,80,0.3)", borderRadius: 6, color: "#e05050", fontSize: 11, cursor: "pointer", fontFamily: BODY, padding: "4px 10px" }}>
+                    Delete group
+                  </button>
+                )}
+              </div>
             </div>
-            <button style={bBtn("#e05050")} onClick={() => { setCG(code); setCU(g.myId); setView("leaderboard"); }}>Leaderboard →</button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     )}
 

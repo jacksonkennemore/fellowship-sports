@@ -12,9 +12,11 @@ function useIsMobile() {
 import { supabase } from "./supabase";
 
 // ── SUPABASE SYNC (background only) ──────────────────────────────────────────
-async function sbSync(pool, groupCode, groupName, memberId, memberName, picks) {
+async function sbSync(pool, groupCode, groupName, memberId, memberName, picks, createdBy = null) {
   try {
-    await supabase.from("groups").upsert({ id: groupCode, pool, name: groupName }, { onConflict: "id" });
+    const groupData = { id: groupCode, pool, name: groupName };
+    if (createdBy) groupData.created_by = createdBy;
+    await supabase.from("groups").upsert(groupData, { onConflict: "id" });
     await supabase.from("members").upsert({ id: memberId, group_id: groupCode, name: memberName, picks }, { onConflict: "id" });
   } catch (e) { /* silent fail */ }
 }
@@ -22,6 +24,21 @@ async function sbGetMembers(groupCode) {
   try {
     const { data } = await supabase.from("members").select("*").eq("group_id", groupCode);
     return data || [];
+  } catch { return []; }
+}
+async function sbDeleteMember(memberId) {
+  try { await supabase.from("members").delete().eq("id", memberId); } catch {}
+}
+async function sbDeleteGroup(groupCode) {
+  try {
+    await supabase.from("members").delete().eq("group_id", groupCode);
+    await supabase.from("groups").delete().eq("id", groupCode);
+  } catch {}
+}
+async function sbLoadUserGroups(userId, pool) {
+  try {
+    const { data } = await supabase.from("members").select("group_id, groups(id, name, pool, created_by)").eq("id", userId);
+    return (data || []).filter(r => r.groups?.pool === pool).map(r => r.groups);
   } catch { return []; }
 }
 
@@ -501,7 +518,7 @@ export default function GolfPool({ onBack, user }) {
     const memberName = user?.user_metadata?.full_name || name.trim();
     const g = { code, name: grpName.trim(), members: { [uid]: { name: memberName, picks: [], tiebreaker: null } }, createdAt: Date.now() };
     persist({ ...db, groups: { ...db.groups, [code]: g } });
-    sbSync("golf", code, grpName.trim(), uid, memberName, {});
+    sbSync("golf", code, grpName.trim(), uid, memberName, {}, uid);
     setCG(code); setCU(uid); setPicks({}); setView("draft"); setErr("");
   }
 
@@ -654,15 +671,44 @@ export default function GolfPool({ onBack, user }) {
         {Object.keys(db.groups).length > 0 && (
           <div style={S.card}>
             <div style={S.h2}>📋 Your Groups</div>
-            {Object.entries(db.groups).map(([code, g]) => (
-              <div key={code} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.04)", padding: "10px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 8 }}>
-                <div>
-                  <span style={{ color: "#c8a84b", fontWeight: "bold", marginRight: 10 }}>{g.name}</span>
-                  <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
+            {Object.entries(db.groups).map(([code, g]) => {
+              const isCreator = g.createdBy === user?.id || g.myId === user?.id;
+              return (
+                <div key={code} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 8, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div>
+                      <span style={{ color: "#c8a84b", fontWeight: "bold", marginRight: 10 }}>{g.name}</span>
+                      <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>{code}</span>
+                    </div>
+                    <button style={S.btnGold} onClick={() => { setCG(code); setCU(g.myId); setView("leaderboard"); }}>Leaderboard →</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {g.myId && (
+                      <button onClick={async () => {
+                        if (!confirm("Remove your entry from this group?")) return;
+                        await sbDeleteMember(g.myId);
+                        const localDB = loadDB();
+                        delete localDB.groups[code];
+                        saveDB(localDB); setDB(localDB);
+                      }} style={{ background: "none", border: "1px solid rgba(200,168,75,0.2)", borderRadius: 6, color: "rgba(200,168,75,0.6)", fontSize: 11, cursor: "pointer", fontFamily: BODY, padding: "4px 10px" }}>
+                        Remove my entry
+                      </button>
+                    )}
+                    {isCreator && (
+                      <button onClick={async () => {
+                        if (!confirm(`Delete group "${g.name}" for everyone? This cannot be undone.`)) return;
+                        await sbDeleteGroup(code);
+                        const localDB = loadDB();
+                        delete localDB.groups[code];
+                        saveDB(localDB); setDB(localDB);
+                      }} style={{ background: "none", border: "1px solid rgba(200,168,75,0.3)", borderRadius: 6, color: "#c8a84b", fontSize: 11, cursor: "pointer", fontFamily: BODY, padding: "4px 10px" }}>
+                        Delete group
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <button style={S.btnGold} onClick={() => { setCG(code); setCU(g.myId); setView("leaderboard"); }}>Leaderboard →</button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
