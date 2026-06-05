@@ -121,87 +121,138 @@ function TeamBtn({ team, seed, selected, onClick, isWinner }) {
   );
 }
 
-// ── LIVE SCOREBOARD ───────────────────────────────────────────────────────────
-function LiveScoreboard({ game }) {
-  if (!game || game.statusState === "pre") return null;
-
-  const { homeTeam, awayTeam, homeScore, awayScore, inning, isTopInning, outs, onFirst, onSecond, onThird, statusState, statusDetail, completed } = game;
-
-  const Base = ({ active }) => (
-    <div style={{
-      width: 10, height: 10,
-      background: active ? "#f0a500" : "rgba(255,255,255,0.15)",
-      transform: "rotate(45deg)",
-      border: `1px solid ${active ? "#f0a500" : "rgba(255,255,255,0.25)"}`,
-      borderRadius: 2,
-    }} />
-  );
-
-  return (
-    <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "8px 10px", marginTop: 8, fontSize: 11, fontFamily: BODY }}>
-      {/* Status */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <div style={{ color: completed ? "rgba(255,255,255,0.4)" : "#4ae84a", fontWeight: 600, fontSize: 10, letterSpacing: "0.08em" }}>
-          {completed ? "FINAL" : statusState === "in" ? `${isTopInning ? "▲" : "▼"} ${inning}` : statusDetail}
-        </div>
-        {!completed && statusState === "in" && (
-          <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-            {[0,1,2].map(i => (
-              <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: i < outs ? "#e05050" : "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)" }} />
-            ))}
-            <span style={{ color: "rgba(255,255,255,0.35)", marginLeft: 2 }}>out{outs !== 1 ? "s" : ""}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Scores */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-            <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 12 }}>{awayTeam}</span>
-            <span style={{ color: "#f0f2f5", fontWeight: 700, fontSize: 14 }}>{awayScore}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 12 }}>{homeTeam}</span>
-            <span style={{ color: "#f0f2f5", fontWeight: 700, fontSize: 14 }}>{homeScore}</span>
-          </div>
-        </div>
-
-        {/* Bases + outs */}
-        {!completed && statusState === "in" && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, marginLeft: 8 }}>
-            <div style={{ display: "flex", justifyContent: "center" }}>
-              <Base active={onSecond} />
-            </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              <Base active={onThird} />
-              <div style={{ width: 10 }} />
-              <Base active={onFirst} />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
   const winner = liveResults[sr.id];
   const game = liveGames?.[sr.id];
+  const userPick = picks[sr.id];
+  const pickInfo = userPick ? getTeamInfo(userPick) : null;
+  const hostInfo = getTeamInfo(sr.host);
+  const visitorInfo = getTeamInfo(sr.visitor);
+
+  const isLive = game?.statusState === "in";
+  const isFinal = game?.completed;
+
   return (
-    <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.05)", borderTop: "2px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: BODY }}>{sr.location}</div>
+    <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.07)", borderLeft: pickInfo ? `3px solid ${pickInfo.color}` : "3px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 14, cursor: "pointer" }}>
+
+      {/* Header: location + live status */}
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", fontFamily: BODY }}>{sr.location} · {sr.g1}</div>
+        {isLive && <div style={{ fontSize: 10, color: "#4ae84a", fontWeight: 600, fontFamily: BODY }}>● LIVE</div>}
+        {isFinal && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600, fontFamily: BODY }}>FINAL</div>}
       </div>
-      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 10, fontFamily: BODY }}>{sr.g1}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <TeamBtn team={sr.host} seed={sr.hostSeed} selected={picks[sr.id] === sr.host} onClick={() => onChange(sr.id, sr.host)} isWinner={winner && winner.toLowerCase().includes(sr.host.split(" ").pop().toLowerCase())} />
-        <div style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: BODY, fontWeight: 600, letterSpacing: "0.1em" }}>VS</div>
-        <TeamBtn team={sr.visitor} seed={sr.visitorSeed} selected={picks[sr.id] === sr.visitor} onClick={() => onChange(sr.id, sr.visitor)} isWinner={winner && winner.toLowerCase().includes(sr.visitor.split(" ").pop().toLowerCase())} />
+
+      {/* Main row: matchup + pick */}
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+
+        {/* Matchup */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* Host */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {hostInfo.logo && <img src={hostInfo.logo} alt={sr.host} style={{ width: 20, height: 20, objectFit: "contain", flexShrink: 0 }} onError={e => e.target.style.display = "none"} />}
+            <span style={{ fontSize: 13, fontFamily: BODY, fontWeight: userPick === sr.host ? 600 : 400, color: userPick === sr.host ? "#ffffff" : "rgba(255,255,255,0.7)" }}>
+              {sr.hostSeed && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginRight: 3 }}>#{sr.hostSeed}</span>}
+              {sr.host}
+            </span>
+            {(isLive || isFinal) && <span style={{ marginLeft: "auto", fontSize: 14, fontWeight: 700, color: "#f0f2f5" }}>{game.homeTeam?.toLowerCase().includes(sr.host.split(" ").pop().toLowerCase()) ? game.homeScore : game.awayScore}</span>}
+          </div>
+
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: BODY, paddingLeft: 28 }}>vs</div>
+
+          {/* Visitor */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {visitorInfo.logo && <img src={visitorInfo.logo} alt={sr.visitor} style={{ width: 20, height: 20, objectFit: "contain", flexShrink: 0 }} onError={e => e.target.style.display = "none"} />}
+            <span style={{ fontSize: 13, fontFamily: BODY, fontWeight: userPick === sr.visitor ? 600 : 400, color: userPick === sr.visitor ? "#ffffff" : "rgba(255,255,255,0.7)" }}>
+              {sr.visitorSeed && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginRight: 3 }}>#{sr.visitorSeed}</span>}
+              {sr.visitor}
+            </span>
+            {(isLive || isFinal) && <span style={{ marginLeft: "auto", fontSize: 14, fontWeight: 700, color: "#f0f2f5" }}>{game.homeTeam?.toLowerCase().includes(sr.visitor.split(" ").pop().toLowerCase()) ? game.homeScore : game.awayScore}</span>}
+          </div>
+        </div>
+
+        {/* Pick column */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 64 }}>
+          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontFamily: BODY, textTransform: "uppercase", letterSpacing: "0.1em" }}>Pick</div>
+          {userPick ? (
+            <>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: `${pickInfo.color}22`, border: `2px solid ${pickInfo.color}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                {pickInfo.logo
+                  ? <img src={pickInfo.logo} alt={userPick} style={{ width: 24, height: 24, objectFit: "contain" }} onError={e => e.target.style.display = "none"} />
+                  : <span style={{ fontSize: 10, color: pickInfo.color, fontWeight: 600 }}>{userPick.split(" ").pop().slice(0,3).toUpperCase()}</span>
+                }
+              </div>
+              <div style={{ fontSize: 11, color: pickInfo.color, fontWeight: 600, fontFamily: BODY, textAlign: "center", lineHeight: 1.2 }}>{userPick.split(" ").pop()}</div>
+            </>
+          ) : (
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.04)", border: "1.5px dashed rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 16, color: "rgba(255,255,255,0.2)" }}>?</span>
+            </div>
+          )}
+        </div>
       </div>
-      {picks[sr.id] && !winner && <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>✓ {picks[sr.id]}</div>}
-      {winner && <div style={{ marginTop: 6, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>🏆 Advanced: {winner}</div>}
-      <LiveScoreboard game={game} />
+
+      {/* Live scoreboard details */}
+      {isLive && (
+        <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 10, color: "#4ae84a", fontWeight: 600, fontFamily: BODY, minWidth: 40 }}>
+            {game.isTopInning ? "▲" : "▼"}{game.inning}
+          </div>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+            {/* outs */}
+            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+              {[0,1,2].map(i => (
+                <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: i < game.outs ? "#e05050" : "rgba(255,255,255,0.15)" }} />
+              ))}
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginLeft: 4, fontFamily: BODY }}>{game.outs} out{game.outs !== 1 ? "s" : ""}</span>
+            </div>
+          </div>
+          {/* Bases */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 2, width: 30 }}>
+            <div /><div style={{ width: 10, height: 10, transform: "rotate(45deg)", background: game.onSecond ? "#f0a500" : "rgba(255,255,255,0.15)", borderRadius: 2 }} /><div />
+            <div style={{ width: 10, height: 10, transform: "rotate(45deg)", background: game.onThird ? "#f0a500" : "rgba(255,255,255,0.15)", borderRadius: 2 }} />
+            <div />
+            <div style={{ width: 10, height: 10, transform: "rotate(45deg)", background: game.onFirst ? "#f0a500" : "rgba(255,255,255,0.15)", borderRadius: 2 }} />
+          </div>
+        </div>
+      )}
+
+      {/* Winner banner */}
+      {winner && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>
+          🏆 Advanced: {winner}
+          {userPick && nameMatch(userPick, winner) && <span style={{ color: "#4ae84a" }}> · +1 pt ✓</span>}
+          {userPick && !nameMatch(userPick, winner) && <span style={{ color: "#e05050" }}> · 0 pts ✗</span>}
+        </div>
+      )}
+
+      {/* Tap to pick hint when no pick yet */}
+      {!userPick && !winner && !isLive && !isFinal && (
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+          {[{ team: sr.host, seed: sr.hostSeed, info: hostInfo }, { team: sr.visitor, seed: sr.visitorSeed, info: visitorInfo }].map(({ team, seed, info }) => (
+            <button key={team} onClick={() => onChange(sr.id, team)} style={{
+              display: "flex", alignItems: "center", gap: 8, width: "100%",
+              background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontFamily: BODY,
+              color: "rgba(255,255,255,0.6)", fontSize: 13, textAlign: "left",
+            }}>
+              {info.logo && <img src={info.logo} alt={team} style={{ width: 20, height: 20, objectFit: "contain" }} onError={e => e.target.style.display = "none"} />}
+              {seed && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>#{seed}</span>}
+              <span style={{ flex: 1 }}>{team}</span>
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)" }}>Pick →</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Change pick buttons when pick exists but game not started */}
+      {userPick && !winner && !isLive && !isFinal && (
+        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+          {[sr.host, sr.visitor].filter(t => t !== userPick).map(t => (
+            <button key={t} onClick={() => onChange(sr.id, t)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.35)", fontSize: 10, cursor: "pointer", fontFamily: BODY, padding: "3px 8px" }}>
+              Switch to {t.split(" ").pop()}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -852,86 +903,95 @@ export default function BaseballPool({ onBack, user }) {
       const medals = ["🥇","🥈","🥉"];
       const srCorrect = SUPER_REGIONALS.filter(sr => nameMatch(e.member.srPicks?.[sr.id], liveResults[sr.id])).length;
       const srPending = SUPER_REGIONALS.filter(sr => !liveResults[sr.id]).length;
-      return (
-        <div key={e.id} style={{ ...card, borderColor: isMe ? "rgba(224,80,80,0.25)" : "rgba(255,255,255,0.06)" }}>
+      const champInfo = e.member.champPick ? getTeamInfo(e.member.champPick) : null;
 
-          {/* Row: rank + name + points */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-            <div style={{ width: 30, textAlign: "center", fontSize: i < 3 ? 18 : 13, color: "rgba(255,255,255,0.4)", fontWeight: 700 }}>
+      return (
+        <div key={e.id} style={{ ...card, borderColor: isMe ? "rgba(224,80,80,0.25)" : "rgba(255,255,255,0.06)", cursor: "pointer" }}
+          onClick={() => setExpandedUser(exp ? null : e.id)}>
+
+          {/* Collapsed row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 28, textAlign: "center", fontSize: i < 3 ? 18 : 13, color: "rgba(255,255,255,0.4)", fontWeight: 700, flexShrink: 0 }}>
               {i < 3 ? medals[i] : `#${i+1}`}
             </div>
-            <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 15, color: isMe ? "#e05050" : "#f0f2f5", fontWeight: isMe ? 700 : 400, fontFamily: BODY }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, color: isMe ? "#e05050" : "#f0f2f5", fontWeight: isMe ? 700 : 400, fontFamily: BODY }}>
                 {e.name} {isMe && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>(you)</span>}
               </div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: BODY, marginTop: 2, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
-                {srCorrect}/{8 - srPending} Super Regional correct
-                {srPending > 0 && <span style={{ color: "rgba(255,255,255,0.25)" }}> · {srPending} pending</span>}
-                {e.member.champPick && (() => { const info = getTeamInfo(e.member.champPick); return (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    · 🏆
-                    {info.logo && <img src={info.logo} alt={e.member.champPick} style={{ width: 14, height: 14, objectFit: "contain" }} onError={ev => ev.target.style.display = "none"} />}
-                    <span style={{ color: "rgba(255,255,255,0.7)", fontWeight: 600 }}>{e.member.champPick}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                <span style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "2px 8px", fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: BODY }}>
+                  {srCorrect}/{8 - srPending} SR correct
+                </span>
+                {e.member.champPick && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "2px 8px" }}>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: BODY }}>🏆</span>
+                    {champInfo?.logo && <img src={champInfo.logo} alt={e.member.champPick} style={{ width: 16, height: 16, objectFit: "contain" }} onError={ev => ev.target.style.display = "none"} />}
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: BODY }}>{e.member.champPick.split(" ").pop()}</span>
                   </span>
-                ); })()}
+                )}
               </div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: DISPLAY, fontSize: 28, letterSpacing: "0.04em", color: "#e05050" }}>{e.pts}</div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: BODY, letterSpacing: "0.1em" }}>PTS</div>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontFamily: DISPLAY, fontSize: 24, letterSpacing: "0.04em", color: "#e05050" }}>{e.pts}</div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: BODY }}>pts</div>
             </div>
-            <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}></div>
+            <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12, flexShrink: 0 }}>{exp ? "▲" : "▼"}</div>
           </div>
 
-          {/* SR picks grid — always visible */}
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6, fontFamily: BODY, fontWeight: 600 }}>Super Regional Picks</div>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 5 }}>
-            {SUPER_REGIONALS.map(sr => {
-              const pick   = e.member.srPicks?.[sr.id];
-              const result = getSRPickResult(pick, sr.id);
-              const info   = pick ? getTeamInfo(pick) : { color: "#444", logo: null };
-              const bgColor = result === "correct" ? "rgba(74,232,74,0.08)" : result === "wrong" ? "rgba(224,80,80,0.08)" : "rgba(255,255,255,0.03)";
-              const borderColor = result === "correct" ? "rgba(74,232,74,0.2)" : result === "wrong" ? "rgba(224,80,80,0.15)" : "rgba(255,255,255,0.05)";
-              const textColor = result === "correct" ? "#4ae84a" : result === "wrong" ? "#e05050" : "rgba(255,255,255,0.6)";
-              return (
-                <div key={sr.id} style={{ background: bgColor, border: `1px solid ${borderColor}`, borderLeft: pick ? `3px solid ${info.color}` : `3px solid rgba(255,255,255,0.08)`, borderRadius: 7, padding: "6px 8px" }}>
-                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: BODY, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.08em" }}>{sr.host.split(" ").pop()}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-                    {info.logo && pick && <img src={info.logo} alt={pick} style={{ width: 14, height: 14, objectFit: "contain" }} onError={e => e.target.style.display = "none"} />}
-                    <div style={{ fontSize: 11, color: textColor, fontFamily: BODY, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {pick ? pick.split(" ").pop() : "—"}
-                      {result === "correct" && " ✓"}
-                      {result === "wrong" && " ✗"}
-                    </div>
-                  </div>
-                  {result === "pending" && pick && <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", fontFamily: BODY }}>pending</div>}
-                  {result === "correct" && <div style={{ fontSize: 9, color: "#4ae84a", fontFamily: BODY }}>+1 pt</div>}
-                  {result === "wrong" && <div style={{ fontSize: 9, color: "#e05050", fontFamily: BODY }}>0 pts</div>}
-                </div>
-              );
-            })}
-          </div>
+          {/* Expanded detail */}
+          {exp && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
 
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, fontFamily: BODY, fontWeight: 600 }}>CWS Bracket Picks</div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(5,1fr)", gap: 6 }}>
-              {[["B1 Winner", e.member.b1Pick, "2pts"],
-                ["B1 Runner-up", e.member.b1Runner, "1pt"],
-                ["B2 Winner", e.member.b2Pick, "2pts"],
-                ["B2 Runner-up", e.member.b2Runner, "1pt"],
-                ["🏆 Champ", e.member.champPick, "4pts"]].map(([label, pick, pts]) => {
-                  const info = pick ? getTeamInfo(pick) : null;
+              {/* SR picks grid */}
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6, fontFamily: BODY, fontWeight: 600 }}>Super Regional Picks</div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 5, marginBottom: 12 }}>
+                {SUPER_REGIONALS.map(sr => {
+                  const pick   = e.member.srPicks?.[sr.id];
+                  const result = getSRPickResult(pick, sr.id);
+                  const info   = pick ? getTeamInfo(pick) : { color: "#444", logo: null };
+                  const bgColor = result === "correct" ? "rgba(74,232,74,0.08)" : result === "wrong" ? "rgba(224,80,80,0.08)" : "rgba(255,255,255,0.03)";
+                  const borderColor = result === "correct" ? "rgba(74,232,74,0.2)" : result === "wrong" ? "rgba(224,80,80,0.15)" : "rgba(255,255,255,0.05)";
+                  const textColor = result === "correct" ? "#4ae84a" : result === "wrong" ? "#e05050" : "rgba(255,255,255,0.6)";
                   return (
-                    <div key={label} style={{ background: "rgba(255,255,255,0.03)", padding: "6px 8px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.05)", borderLeft: info ? `3px solid ${info.color}` : "3px solid rgba(255,255,255,0.08)", textAlign: "center" }}>
-                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: BODY, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
-                      {info?.logo && <img src={info.logo} alt={pick} style={{ width: 18, height: 18, objectFit: "contain", marginBottom: 3 }} onError={e => e.target.style.display = "none"} />}
-                      <div style={{ fontSize: 11, color: pick ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.2)", fontWeight: 600, fontFamily: BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pick ? pick.split(" ").pop() : "—"}</div>
-                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", fontFamily: BODY, marginTop: 2 }}>{pts}</div>
+                    <div key={sr.id} style={{ background: bgColor, border: `1px solid ${borderColor}`, borderLeft: pick ? `3px solid ${info.color}` : `3px solid rgba(255,255,255,0.08)`, borderRadius: 7, padding: "6px 8px" }}>
+                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: BODY, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.08em" }}>{sr.host.split(" ").pop()}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+                        {info.logo && pick && <img src={info.logo} alt={pick} style={{ width: 14, height: 14, objectFit: "contain" }} onError={e => e.target.style.display = "none"} />}
+                        <div style={{ fontSize: 11, color: textColor, fontFamily: BODY, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {pick ? pick.split(" ").pop() : "—"}
+                          {result === "correct" && " ✓"}
+                          {result === "wrong" && " ✗"}
+                        </div>
+                      </div>
+                      {result === "pending" && pick && <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", fontFamily: BODY }}>pending</div>}
+                      {result === "correct" && <div style={{ fontSize: 9, color: "#4ae84a", fontFamily: BODY }}>+1 pt</div>}
+                      {result === "wrong" && <div style={{ fontSize: 9, color: "#e05050", fontFamily: BODY }}>0 pts</div>}
                     </div>
                   );
                 })}
+              </div>
+
+              {/* CWS picks */}
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6, fontFamily: BODY, fontWeight: 600 }}>CWS Bracket Picks</div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(5,1fr)", gap: 6 }}>
+                {[["B1 Winner", e.member.b1Pick, "2pts"],
+                  ["B1 Runner-up", e.member.b1Runner, "1pt"],
+                  ["B2 Winner", e.member.b2Pick, "2pts"],
+                  ["B2 Runner-up", e.member.b2Runner, "1pt"],
+                  ["🏆 Champ", e.member.champPick, "4pts"]].map(([label, pick, pts]) => {
+                    const info = pick ? getTeamInfo(pick) : null;
+                    return (
+                      <div key={label} style={{ background: "rgba(255,255,255,0.03)", padding: "6px 8px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.05)", borderLeft: info ? `3px solid ${info.color}` : "3px solid rgba(255,255,255,0.08)", textAlign: "center" }}>
+                        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: BODY, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
+                        {info?.logo && <img src={info.logo} alt={pick} style={{ width: 18, height: 18, objectFit: "contain", marginBottom: 3 }} onError={e => e.target.style.display = "none"} />}
+                        <div style={{ fontSize: 11, color: pick ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.2)", fontWeight: 600, fontFamily: BODY, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pick ? pick.split(" ").pop() : "—"}</div>
+                        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", fontFamily: BODY, marginTop: 2 }}>{pts}</div>
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       );
     })}
