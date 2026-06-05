@@ -121,8 +121,73 @@ function TeamBtn({ team, seed, selected, onClick, isWinner }) {
   );
 }
 
-function SRCard({ sr, picks, onChange, liveResults }) {
+// ── LIVE SCOREBOARD ───────────────────────────────────────────────────────────
+function LiveScoreboard({ game }) {
+  if (!game || game.statusState === "pre") return null;
+
+  const { homeTeam, awayTeam, homeScore, awayScore, inning, isTopInning, outs, onFirst, onSecond, onThird, statusState, statusDetail, completed } = game;
+
+  const Base = ({ active }) => (
+    <div style={{
+      width: 10, height: 10,
+      background: active ? "#f0a500" : "rgba(255,255,255,0.15)",
+      transform: "rotate(45deg)",
+      border: `1px solid ${active ? "#f0a500" : "rgba(255,255,255,0.25)"}`,
+      borderRadius: 2,
+    }} />
+  );
+
+  return (
+    <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "8px 10px", marginTop: 8, fontSize: 11, fontFamily: BODY }}>
+      {/* Status */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style={{ color: completed ? "rgba(255,255,255,0.4)" : "#4ae84a", fontWeight: 600, fontSize: 10, letterSpacing: "0.08em" }}>
+          {completed ? "FINAL" : statusState === "in" ? `${isTopInning ? "▲" : "▼"} ${inning}` : statusDetail}
+        </div>
+        {!completed && statusState === "in" && (
+          <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+            {[0,1,2].map(i => (
+              <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: i < outs ? "#e05050" : "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)" }} />
+            ))}
+            <span style={{ color: "rgba(255,255,255,0.35)", marginLeft: 2 }}>out{outs !== 1 ? "s" : ""}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Scores */}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+            <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 12 }}>{awayTeam}</span>
+            <span style={{ color: "#f0f2f5", fontWeight: 700, fontSize: 14 }}>{awayScore}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 12 }}>{homeTeam}</span>
+            <span style={{ color: "#f0f2f5", fontWeight: 700, fontSize: 14 }}>{homeScore}</span>
+          </div>
+        </div>
+
+        {/* Bases + outs */}
+        {!completed && statusState === "in" && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, marginLeft: 8 }}>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Base active={onSecond} />
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <Base active={onThird} />
+              <div style={{ width: 10 }} />
+              <Base active={onFirst} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
   const winner = liveResults[sr.id];
+  const game = liveGames?.[sr.id];
   return (
     <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.05)", borderTop: "2px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -136,6 +201,7 @@ function SRCard({ sr, picks, onChange, liveResults }) {
       </div>
       {picks[sr.id] && !winner && <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>✓ {picks[sr.id]}</div>}
       {winner && <div style={{ marginTop: 6, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>🏆 Advanced: {winner}</div>}
+      <LiveScoreboard game={game} />
     </div>
   );
 }
@@ -261,6 +327,7 @@ export default function BaseballPool({ onBack, user }) {
   const [activeTab, setActiveTab] = useState("sr");
   const [expandedUser, setExpandedUser] = useState(null);
   const [liveResults, setLiveResults]   = useState({});
+  const [liveGames, setLiveGames]       = useState({});
   const [liveStatus, setLiveStatus]     = useState("idle");
   const [lastSync, setLastSync]         = useState(null);
 
@@ -294,21 +361,50 @@ export default function BaseballPool({ onBack, user }) {
       if (!res.ok) throw new Error();
       const data = await res.json();
       const results = {};
+      const games = {};
       (data.events || []).forEach(ev => {
         const comp = ev.competitions?.[0];
-        if (!comp || !ev.status?.type?.completed) return;
-        const winner = comp.competitors?.find(t => t.winner);
-        if (!winner) return;
-        const wName = winner.team?.shortDisplayName || winner.team?.displayName || "";
+        if (!comp) return;
+        const teams = comp.competitors || [];
+        const home = teams.find(t => t.homeAway === "home");
+        const away = teams.find(t => t.homeAway === "away");
+        const status = ev.status;
+        const situation = comp.situation || {};
+        const allNames = [...teams.map(t => t.team?.shortDisplayName || ""), ...teams.map(t => t.team?.displayName || "")];
         const sr = SUPER_REGIONALS.find(s =>
-          wName.toLowerCase().includes(s.host.split(" ").pop().toLowerCase()) ||
-          wName.toLowerCase().includes(s.visitor.split(" ").pop().toLowerCase())
+          allNames.some(n =>
+            n.toLowerCase().includes(s.host.split(" ").pop().toLowerCase()) ||
+            n.toLowerCase().includes(s.visitor.split(" ").pop().toLowerCase())
+          )
         );
-        if (sr) results[sr.id] = wName;
+        if (!sr) return;
+        games[sr.id] = {
+          homeTeam: home?.team?.shortDisplayName || "",
+          awayTeam: away?.team?.shortDisplayName || "",
+          homeScore: home?.score ?? "0",
+          awayScore: away?.score ?? "0",
+          inning: status?.period || 0,
+          isTopInning: situation?.isTopInning ?? true,
+          outs: situation?.outs || 0,
+          onFirst: !!situation?.onFirst,
+          onSecond: !!situation?.onSecond,
+          onThird: !!situation?.onThird,
+          statusState: status?.type?.state || "pre",
+          statusDetail: status?.type?.shortDetail || "",
+          completed: !!status?.type?.completed,
+        };
+        if (status?.type?.completed) {
+          const winner = teams.find(t => t.winner);
+          if (winner) {
+            const wName = winner.team?.shortDisplayName || winner.team?.displayName || "";
+            results[sr.id] = wName;
+          }
+        }
       });
       setLiveResults(results);
+      setLiveGames(games);
       setLastSync(new Date());
-      setLiveStatus(Object.keys(results).length > 0 ? "live" : "pre");
+      setLiveStatus(Object.keys(games).length > 0 ? "live" : "pre");
     } catch { setLiveStatus("pre"); }
   }, []);
 
