@@ -65,7 +65,7 @@ const SUPER_REGIONALS = [
   { id: "troy", host: "Troy",           hostSeed: null,visitor: "Little Rock",   visitorSeed: null, location: "Troy, AL",         g1: "Fri June 5 · 5 PM ET",   cwsBracket: 2 },
 ];
 
-const SR_DEADLINE  = new Date("2026-06-05T18:59:00Z"); // Thu June 5 2:59 PM ET
+const SR_DEADLINE  = new Date("2026-06-05T18:59:00Z"); // Fri June 5 2:59 PM ET
 const CWS_DEADLINE = new Date("2026-06-12T16:00:00Z"); // Fri June 12 noon ET
 const srDeadlinePassed  = () => new Date() > SR_DEADLINE;
 const cwsDeadlinePassed = () => new Date() > CWS_DEADLINE;
@@ -535,7 +535,7 @@ export default function BaseballPool({ onBack, user }) {
       <div style={{ display: "inline-block", background: "rgba(224,80,80,0.08)", border: "1px solid rgba(224,80,80,0.2)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontFamily: BODY }}>
         {deadlineSR
           ? <span style={{ color: "#e05050", fontWeight: 600 }}>🔒 Picks Locked · Tournament Underway</span>
-          : <span style={{ color: "rgba(255,255,255,0.5)" }}>⏰ Deadline: <strong style={{ color: "#e05050" }}>Thu June 5 · 2:59 PM ET</strong></span>
+          : <span style={{ color: "rgba(255,255,255,0.5)" }}>⏰ Deadline: <strong style={{ color: "#e05050" }}>Fri June 5 · 2:59 PM ET</strong></span>
         }
       </div>
     </div>

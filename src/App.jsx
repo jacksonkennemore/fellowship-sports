@@ -305,7 +305,7 @@ export default function App() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 3, fontWeight: 600 }}>Entry Deadline</div>
-                <div style={{ fontSize: 13, color: "#e05050", fontWeight: 600 }}>Thu June 5 · 2:59 PM ET</div>
+                <div style={{ fontSize: 13, color: "#e05050", fontWeight: 600 }}>Fri June 5 · 2:59 PM ET</div>
               </div>
               <div style={{ background: "rgba(74,232,74,0.1)", color: "#4ae84a", fontSize: 11, padding: "5px 10px", borderRadius: 20, border: "1px solid rgba(74,232,74,0.2)", fontWeight: 600 }}>● OPEN</div>
             </div>
