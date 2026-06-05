@@ -437,13 +437,16 @@ export default function BaseballPool({ onBack, user }) {
         const away = teams.find(t => t.homeAway === "away");
         const status = ev.status;
         const situation = comp.situation || {};
-        const allNames = [...teams.map(t => t.team?.shortDisplayName || ""), ...teams.map(t => t.team?.displayName || "")];
-        const sr = SUPER_REGIONALS.find(s =>
-          allNames.some(n =>
-            n.toLowerCase().includes(s.host.split(" ").pop().toLowerCase()) ||
-            n.toLowerCase().includes(s.visitor.split(" ").pop().toLowerCase())
-          )
-        );
+        const allNames = [...teams.map(t => t.team?.shortDisplayName?.toLowerCase() || ""), ...teams.map(t => t.team?.displayName?.toLowerCase() || "")];
+        
+        // Match SR by requiring BOTH teams to be present in the game
+        const sr = SUPER_REGIONALS.find(s => {
+          const hostLast = s.host.split(" ").pop().toLowerCase();
+          const visitorLast = s.visitor.split(" ").pop().toLowerCase();
+          const hostMatch = allNames.some(n => n.includes(hostLast) || hostLast.includes(n.split(" ").pop()));
+          const visitorMatch = allNames.some(n => n.includes(visitorLast) || visitorLast.includes(n.split(" ").pop()));
+          return hostMatch && visitorMatch;
+        });
         if (!sr) return;
         games[sr.id] = {
           homeTeam: home?.team?.shortDisplayName || "",
