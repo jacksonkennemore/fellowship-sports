@@ -190,18 +190,7 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
             {(isLive || isFinal) && <span style={{ marginLeft: "auto", fontSize: 14, fontWeight: 700, color: "#f0f2f5" }}>{game.homeTeam?.toLowerCase().includes(sr.visitor.split(" ").pop().toLowerCase()) ? game.homeScore : game.awayScore}</span>}
           </div>
 
-          {/* Series record */}
-          {game?.seriesWins && (
-            <div style={{ marginTop: 5, display: "flex", gap: 10, paddingLeft: 22 }}>
-              {Object.entries(game.seriesWins).map(([team, wins]) => (
-                <span key={team} style={{ fontSize: 10, color: wins >= 2 ? "#4ae84a" : "rgba(255,255,255,0.4)", fontFamily: BODY, fontWeight: wins >= 2 ? 600 : 400 }}>
-                  {team.split(" ").pop()} {wins}-{Object.values(game.seriesWins).reduce((a,b) => a+b, 0) - wins}
-                  {wins >= 2 && " wins series ✓"}
-                </span>
-              ))}
-              {!game.seriesComplete && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: BODY }}>series record</span>}
-            </div>
-          )}
+          {/* Series record — removed from here, shown in bottom bar */}
         </div>
 
         {/* Pick column */}
@@ -250,19 +239,31 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
         </div>
       )}
 
-      {/* Winner banner — only when series complete */}
-      {winner && game?.seriesComplete && (
-        <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>
-          🏆 Advanced: {winner}
-          {userPick && nameMatch(userPick, winner) && <span style={{ color: "#4ae84a" }}> · +1 pt ✓</span>}
-          {userPick && !nameMatch(userPick, winner) && <span style={{ color: "#e05050" }}> · 0 pts ✗</span>}
-        </div>
-      )}
-      {winner && !game?.seriesComplete && (
-        <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>
-          🏆 Advanced: {winner}
-          {userPick && nameMatch(userPick, winner) && <span style={{ color: "#4ae84a" }}> · +1 pt ✓</span>}
-          {userPick && !nameMatch(userPick, winner) && <span style={{ color: "#e05050" }}> · 0 pts ✗</span>}
+      {/* Series record bottom bar */}
+      {game?.seriesWins && (() => {
+        const entries = Object.entries(game.seriesWins);
+        const leader = entries.reduce((a, b) => a[1] >= b[1] ? a : b, ["", 0]);
+        const isTied = entries.length === 2 && entries[0][1] === entries[1][1];
+        const leaderInfo = leader[0] ? getTeamInfo(leader[0]) : null;
+        const barColor = isTied ? "rgba(255,255,255,0.08)" : (leaderInfo?.color || "rgba(255,255,255,0.08)");
+        const opacity = game.seriesComplete ? 0.25 : 0.12;
+        const totalGames = entries.reduce((s, [,w]) => s + w, 0);
+        const gameLabel = `Game ${totalGames + (game.seriesComplete ? 0 : 0)}`;
+        return (
+          <div style={{ margin: "10px -14px -14px", padding: "5px 14px", background: `${barColor.startsWith("rgba") ? barColor : barColor + Math.round(opacity * 255).toString(16).padStart(2,"0")}`, borderTop: `1px solid ${isTied ? "rgba(255,255,255,0.06)" : `${leaderInfo?.color || "#fff"}22`}`, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottomLeftRadius: 12, borderBottomRightRadius: 12 }}>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: BODY }}>Series</span>
+            <span style={{ fontSize: 11, fontWeight: 600, fontFamily: BODY, color: isTied ? "rgba(255,255,255,0.5)" : (leaderInfo?.color || "rgba(255,255,255,0.5)") }}>
+              {entries.map(([team, wins]) => `${team.split(" ").pop()} ${wins}`).join(" · ")}
+              {game.seriesComplete && " — series final"}
+            </span>
+          </div>
+        );
+      })()}
+
+      {/* Winner pt result */}
+      {winner && game?.seriesComplete && userPick && (
+        <div style={{ marginTop: 6, fontSize: 11, fontFamily: BODY, fontWeight: 600, color: nameMatch(userPick, winner) ? "#4ae84a" : "#e05050" }}>
+          {nameMatch(userPick, winner) ? "✓ Correct pick · +1 pt" : `✗ ${winner} won the series · 0 pts`}
         </div>
       )}
 
