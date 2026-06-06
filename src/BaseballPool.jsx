@@ -96,9 +96,7 @@ const DB_KEY = "fellowship_baseball_v2";
 function loadDB() { try { return JSON.parse(localStorage.getItem(DB_KEY)) || { groups: {} }; } catch { return { groups: {} }; } }
 function saveDB(db) { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
 
-// Fetch all SR games June 5-7 2026
-const ESPN_BB_DATES = ["20260605", "20260606", "20260607", "20260608", "20260609", "20260610"];
-const ESPN_BB_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard?limit=100&groups=50";
+const ESPN_BB_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard";
 
 const bBtn = (color) => ({
   background: `${color}22`, color, border: `1px solid ${color}44`,
@@ -152,17 +150,16 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
   const visitorInfo = getTeamInfo(sr.visitor);
 
   const isLive = game?.statusState === "in";
-  const isFinal = game?.completed || game?.statusState === "post";
+  const isFinal = game?.completed;
 
   return (
     <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.07)", borderLeft: pickInfo ? `3px solid ${pickInfo.color}` : "3px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 14, cursor: "pointer" }}>
 
-      {/* Header: location + live/final status */}
+      {/* Header: location + live status */}
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", fontFamily: BODY }}>{sr.location} · {sr.g1}</div>
         {isLive && <div style={{ fontSize: 10, color: "#4ae84a", fontWeight: 600, fontFamily: BODY }}>● LIVE</div>}
-        {isFinal && !game?.seriesComplete && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600, fontFamily: BODY }}>GAME FINAL</div>}
-        {game?.seriesComplete && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600, fontFamily: BODY }}>SERIES FINAL</div>}
+        {isFinal && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600, fontFamily: BODY }}>FINAL</div>}
       </div>
 
       {/* Main row: matchup + pick */}
@@ -191,8 +188,6 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
             </span>
             {(isLive || isFinal) && <span style={{ marginLeft: "auto", fontSize: 14, fontWeight: 700, color: "#f0f2f5" }}>{game.homeTeam?.toLowerCase().includes(sr.visitor.split(" ").pop().toLowerCase()) ? game.homeScore : game.awayScore}</span>}
           </div>
-
-          {/* Series record — removed from here, shown in bottom bar */}
         </div>
 
         {/* Pick column */}
@@ -241,31 +236,12 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
         </div>
       )}
 
-      {/* Series record bottom bar */}
-      {game?.seriesWins && (() => {
-        const entries = Object.entries(game.seriesWins);
-        const leader = entries.reduce((a, b) => a[1] >= b[1] ? a : b, ["", 0]);
-        const isTied = entries.length === 2 && entries[0][1] === entries[1][1];
-        const leaderInfo = leader[0] ? getTeamInfo(leader[0]) : null;
-        const barColor = isTied ? "rgba(255,255,255,0.08)" : (leaderInfo?.color || "rgba(255,255,255,0.08)");
-        const opacity = game.seriesComplete ? 0.25 : 0.12;
-        const totalGames = entries.reduce((s, [,w]) => s + w, 0);
-        const gameLabel = `Game ${totalGames + (game.seriesComplete ? 0 : 0)}`;
-        return (
-          <div style={{ margin: "10px -14px -14px", padding: "5px 14px", background: `${barColor.startsWith("rgba") ? barColor : barColor + Math.round(opacity * 255).toString(16).padStart(2,"0")}`, borderTop: `1px solid ${isTied ? "rgba(255,255,255,0.06)" : `${leaderInfo?.color || "#fff"}22`}`, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottomLeftRadius: 12, borderBottomRightRadius: 12 }}>
-            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: BODY }}>Series</span>
-            <span style={{ fontSize: 11, fontWeight: 600, fontFamily: BODY, color: isTied ? "rgba(255,255,255,0.5)" : (leaderInfo?.color || "rgba(255,255,255,0.5)") }}>
-              {entries.map(([team, wins]) => `${team.split(" ").pop()} ${wins}`).join(" · ")}
-              {game.seriesComplete && " — series final"}
-            </span>
-          </div>
-        );
-      })()}
-
-      {/* Winner pt result */}
-      {winner && game?.seriesComplete && userPick && (
-        <div style={{ marginTop: 6, fontSize: 11, fontFamily: BODY, fontWeight: 600, color: nameMatch(userPick, winner) ? "#4ae84a" : "#e05050" }}>
-          {nameMatch(userPick, winner) ? "✓ Correct pick · +1 pt" : `✗ ${winner} won the series · 0 pts`}
+      {/* Winner banner */}
+      {winner && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>
+          🏆 Advanced: {winner}
+          {userPick && nameMatch(userPick, winner) && <span style={{ color: "#4ae84a" }}> · +1 pt ✓</span>}
+          {userPick && !nameMatch(userPick, winner) && <span style={{ color: "#e05050" }}> · 0 pts ✗</span>}
         </div>
       )}
 
@@ -421,16 +397,8 @@ export default function BaseballPool({ onBack, user }) {
   const [champPick, setChampPick] = useState(null);
   const [activeTab, setActiveTab] = useState("sr");
   const [expandedUser, setExpandedUser] = useState(null);
-  const [liveResults, setLiveResults] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("fs_sr_results") || "{}"); } catch { return {}; }
-  });
-  const [liveGames, setLiveGames] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("fs_sr_games") || "{}"); } catch { return {}; }
-  });
-
-  // Persist whenever they change
-  useEffect(() => { localStorage.setItem("fs_sr_results", JSON.stringify(liveResults)); }, [liveResults]);
-  useEffect(() => { localStorage.setItem("fs_sr_games", JSON.stringify(liveGames)); }, [liveGames]);
+  const [liveResults, setLiveResults]   = useState({});
+  const [liveGames, setLiveGames]       = useState({});
   const [liveStatus, setLiveStatus]     = useState("idle");
   const [lastSync, setLastSync]         = useState(null);
 
@@ -456,17 +424,12 @@ export default function BaseballPool({ onBack, user }) {
   const fetchScores = useCallback(async (silent = false) => {
     if (!silent) setLiveStatus("fetching");
     try {
-      // Fetch all SR dates to get complete series picture
-      const responses = await Promise.all(
-        ESPN_BB_DATES.map(d => fetch(`${ESPN_BB_URL}&dates=${d}`).then(r => r.ok ? r.json() : { events: [] }).catch(() => ({ events: [] })))
-      );
-      const allEvents = responses.flatMap(data => data.events || []);
-
-      const seriesWins = {};
-      const games = {};
+      const res  = await fetch(ESPN_BB_URL);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
       const results = {};
-
-      allEvents.forEach(ev => {
+      const games = {};
+      (data.events || []).forEach(ev => {
         const comp = ev.competitions?.[0];
         if (!comp) return;
         const teams = comp.competitors || [];
@@ -474,9 +437,9 @@ export default function BaseballPool({ onBack, user }) {
         const away = teams.find(t => t.homeAway === "away");
         const status = ev.status;
         const situation = comp.situation || {};
-        const state = status?.type?.state;
         const allNames = [...teams.map(t => t.team?.shortDisplayName?.toLowerCase() || ""), ...teams.map(t => t.team?.displayName?.toLowerCase() || "")];
-
+        
+        // Match SR by requiring BOTH teams to be present in the game
         const sr = SUPER_REGIONALS.find(s => {
           const hostLast = s.host.split(" ").pop().toLowerCase();
           const visitorLast = s.visitor.split(" ").pop().toLowerCase();
@@ -485,67 +448,31 @@ export default function BaseballPool({ onBack, user }) {
           return hostMatch && visitorMatch;
         });
         if (!sr) return;
-
-        // Always store most recent game state (live overrides completed)
-        const isLiveOrDone = state === "in" || state === "post" || !!status?.type?.completed;
-        if (isLiveOrDone) {
-          const existingState = games[sr.id]?.statusState;
-          // Live game takes priority, otherwise keep most recent
-          if (!games[sr.id] || state === "in" || existingState !== "in") {
-            games[sr.id] = {
-              homeTeam: home?.team?.shortDisplayName || "",
-              awayTeam: away?.team?.shortDisplayName || "",
-              homeScore: home?.score ?? "0",
-              awayScore: away?.score ?? "0",
-              inning: status?.period || 0,
-              isTopInning: situation?.isTopInning ?? true,
-              outs: situation?.outs || 0,
-              onFirst: !!situation?.onFirst,
-              onSecond: !!situation?.onSecond,
-              onThird: !!situation?.onThird,
-              statusState: state || "pre",
-              statusDetail: status?.type?.shortDetail || "",
-              completed: state === "post" || !!status?.type?.completed,
-            };
-          }
-        }
-
-        // Track series wins across all completed games
-        if (state === "post" || status?.type?.completed) {
+        games[sr.id] = {
+          homeTeam: home?.team?.shortDisplayName || "",
+          awayTeam: away?.team?.shortDisplayName || "",
+          homeScore: home?.score ?? "0",
+          awayScore: away?.score ?? "0",
+          inning: status?.period || 0,
+          isTopInning: situation?.isTopInning ?? true,
+          outs: situation?.outs || 0,
+          onFirst: !!situation?.onFirst,
+          onSecond: !!situation?.onSecond,
+          onThird: !!situation?.onThird,
+          statusState: status?.type?.state || "pre",
+          statusDetail: status?.type?.shortDetail || "",
+          completed: !!status?.type?.completed,
+        };
+        if (status?.type?.completed) {
           const winner = teams.find(t => t.winner);
           if (winner) {
             const wName = winner.team?.shortDisplayName || winner.team?.displayName || "";
-            if (!seriesWins[sr.id]) seriesWins[sr.id] = {};
-            seriesWins[sr.id][wName] = (seriesWins[sr.id][wName] || 0) + 1;
+            results[sr.id] = wName;
           }
         }
       });
-
-      // Determine series winners
-      Object.entries(seriesWins).forEach(([srId, wins]) => {
-        const seriesWinner = Object.entries(wins).find(([, w]) => w >= 2);
-        if (seriesWinner) results[srId] = seriesWinner[0];
-      });
-
-      // Attach series record to games
-      Object.keys(games).forEach(srId => {
-        if (seriesWins[srId]) {
-          games[srId].seriesWins = seriesWins[srId];
-          games[srId].seriesComplete = !!results[srId];
-        }
-      });
-
-      setLiveResults(prev => ({ ...prev, ...results }));
-      setLiveGames(prev => {
-        const merged = { ...prev };
-        Object.entries(games).forEach(([id, g]) => {
-          // Live game always wins; completed game only overwrites if we don't already have a series complete
-          if (g.statusState === "in" || !merged[id]?.seriesComplete) {
-            merged[id] = g;
-          }
-        });
-        return merged;
-      });
+      setLiveResults(results);
+      setLiveGames(games);
       setLastSync(new Date());
       setLiveStatus(Object.keys(games).length > 0 ? "live" : "pre");
     } catch { setLiveStatus("pre"); }
@@ -720,11 +647,11 @@ export default function BaseballPool({ onBack, user }) {
     <div style={card}>
       <div style={{ fontFamily: DISPLAY, fontSize: 18, letterSpacing: "0.06em", color: "#e05050", marginBottom: 8 }}>✏️ MANUAL RESULT OVERRIDE</div>
       <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13, marginBottom: 10, fontFamily: BODY }}>
-        Format: <code style={{ color: "rgba(255,255,255,0.6)" }}>Ole Miss 1-0</code> for game record, <code style={{ color: "rgba(255,255,255,0.6)" }}>West Virginia 2-0</code> for series winner. One per line.
+        If ESPN misses a result, enter it manually. Format: <code style={{ color: "rgba(255,255,255,0.6)" }}>Georgia</code> (just the winning team name, one per line).
       </p>
       <textarea
-        style={{ ...inp, height: 140, resize: "vertical", marginBottom: 10 }}
-        placeholder={"Ole Miss 1-0\nWest Virginia 1-0\nNorth Carolina 1-0\nTroy 1-0"}
+        style={{ ...inp, height: 120, resize: "vertical", marginBottom: 10 }}
+        placeholder={"Georgia\nAuburn\nNorth Carolina\n..."}
         value={adminScoreInput}
         onChange={e => setAdminScoreInput(e.target.value)}
       />
@@ -732,39 +659,20 @@ export default function BaseballPool({ onBack, user }) {
         <button style={bBtn("#e05050")} onClick={() => {
           const lines = adminScoreInput.split("\n").map(l => l.trim()).filter(Boolean);
           const newResults = { ...liveResults };
-          const newGames = { ...liveGames };
-          lines.forEach(line => {
-            const match = line.match(/^(.+?)\s+(\d+)-(\d+)$/);
-            if (!match) return;
-            const [, teamName, wStr, lStr] = match;
-            const wins = parseInt(wStr), losses = parseInt(lStr);
+          lines.forEach(winner => {
             const sr = SUPER_REGIONALS.find(s =>
-              s.host.toLowerCase().includes(teamName.toLowerCase().trim()) ||
-              s.visitor.toLowerCase().includes(teamName.toLowerCase().trim()) ||
-              teamName.toLowerCase().trim().includes(s.host.split(" ").pop().toLowerCase()) ||
-              teamName.toLowerCase().trim().includes(s.visitor.split(" ").pop().toLowerCase())
+              s.host.toLowerCase().includes(winner.toLowerCase()) ||
+              s.visitor.toLowerCase().includes(winner.toLowerCase()) ||
+              winner.toLowerCase().includes(s.host.split(" ").pop().toLowerCase()) ||
+              winner.toLowerCase().includes(s.visitor.split(" ").pop().toLowerCase())
             );
-            if (!sr) return;
-            const isHost = sr.host.toLowerCase().includes(teamName.toLowerCase().trim()) || teamName.toLowerCase().trim().includes(sr.host.split(" ").pop().toLowerCase());
-            const leader = isHost ? sr.host : sr.visitor;
-            const trailer = isHost ? sr.visitor : sr.host;
-            const seriesWins = { [leader.split(" ").pop()]: wins, [trailer.split(" ").pop()]: losses };
-            const seriesComplete = wins >= 2;
-            if (seriesComplete) newResults[sr.id] = leader;
-            newGames[sr.id] = {
-              ...(newGames[sr.id] || {}),
-              statusState: "post",
-              completed: seriesComplete,
-              seriesWins,
-              seriesComplete,
-            };
+            if (sr) newResults[sr.id] = winner;
           });
           setLiveResults(newResults);
-          setLiveGames(newGames);
           flash(`✓ Updated ${lines.length} result${lines.length !== 1 ? "s" : ""}`);
           setAdminScoreInput("");
         }}>Apply Results</button>
-        <button style={bBtn("rgba(255,255,255,0.3)")} onClick={() => { setLiveResults({}); setLiveGames({}); flash("✓ Results cleared"); }}>Clear All</button>
+        <button style={bBtn("rgba(255,255,255,0.3)")} onClick={() => { setLiveResults({}); flash("✓ Results cleared"); }}>Clear All</button>
       </div>
     </div>
 
