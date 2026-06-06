@@ -155,11 +155,12 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
   return (
     <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.07)", borderLeft: pickInfo ? `3px solid ${pickInfo.color}` : "3px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 14, cursor: "pointer" }}>
 
-      {/* Header: location + live status */}
+      {/* Header: location + live/final status */}
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", fontFamily: BODY }}>{sr.location} · {sr.g1}</div>
         {isLive && <div style={{ fontSize: 10, color: "#4ae84a", fontWeight: 600, fontFamily: BODY }}>● LIVE</div>}
-        {isFinal && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600, fontFamily: BODY }}>FINAL</div>}
+        {isFinal && !game?.seriesComplete && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600, fontFamily: BODY }}>GAME FINAL</div>}
+        {game?.seriesComplete && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontWeight: 600, fontFamily: BODY }}>SERIES FINAL</div>}
       </div>
 
       {/* Main row: matchup + pick */}
@@ -188,6 +189,19 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
             </span>
             {(isLive || isFinal) && <span style={{ marginLeft: "auto", fontSize: 14, fontWeight: 700, color: "#f0f2f5" }}>{game.homeTeam?.toLowerCase().includes(sr.visitor.split(" ").pop().toLowerCase()) ? game.homeScore : game.awayScore}</span>}
           </div>
+
+          {/* Series record */}
+          {game?.seriesWins && (
+            <div style={{ marginTop: 5, display: "flex", gap: 10, paddingLeft: 22 }}>
+              {Object.entries(game.seriesWins).map(([team, wins]) => (
+                <span key={team} style={{ fontSize: 10, color: wins >= 2 ? "#4ae84a" : "rgba(255,255,255,0.4)", fontFamily: BODY, fontWeight: wins >= 2 ? 600 : 400 }}>
+                  {team.split(" ").pop()} {wins}-{Object.values(game.seriesWins).reduce((a,b) => a+b, 0) - wins}
+                  {wins >= 2 && " wins series ✓"}
+                </span>
+              ))}
+              {!game.seriesComplete && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: BODY }}>series record</span>}
+            </div>
+          )}
         </div>
 
         {/* Pick column */}
@@ -236,8 +250,15 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
         </div>
       )}
 
-      {/* Winner banner */}
-      {winner && (
+      {/* Winner banner — only when series complete */}
+      {winner && game?.seriesComplete && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>
+          🏆 Advanced: {winner}
+          {userPick && nameMatch(userPick, winner) && <span style={{ color: "#4ae84a" }}> · +1 pt ✓</span>}
+          {userPick && !nameMatch(userPick, winner) && <span style={{ color: "#e05050" }}> · 0 pts ✗</span>}
+        </div>
+      )}
+      {winner && !game?.seriesComplete && (
         <div style={{ marginTop: 8, fontSize: 11, color: "#4ae84a", fontFamily: BODY, fontWeight: 600 }}>
           🏆 Advanced: {winner}
           {userPick && nameMatch(userPick, winner) && <span style={{ color: "#4ae84a" }}> · +1 pt ✓</span>}
@@ -427,8 +448,10 @@ export default function BaseballPool({ onBack, user }) {
       const res  = await fetch(ESPN_BB_URL);
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const results = {};
+      const seriesWins = {}; // { srId: { teamName: wins } }
       const games = {};
+      const results = {};
+
       (data.events || []).forEach(ev => {
         const comp = ev.competitions?.[0];
         if (!comp) return;
@@ -438,7 +461,7 @@ export default function BaseballPool({ onBack, user }) {
         const status = ev.status;
         const situation = comp.situation || {};
         const allNames = [...teams.map(t => t.team?.shortDisplayName?.toLowerCase() || ""), ...teams.map(t => t.team?.displayName?.toLowerCase() || "")];
-        
+
         // Match SR by requiring BOTH teams to be present in the game
         const sr = SUPER_REGIONALS.find(s => {
           const hostLast = s.host.split(" ").pop().toLowerCase();
@@ -448,29 +471,52 @@ export default function BaseballPool({ onBack, user }) {
           return hostMatch && visitorMatch;
         });
         if (!sr) return;
-        games[sr.id] = {
-          homeTeam: home?.team?.shortDisplayName || "",
-          awayTeam: away?.team?.shortDisplayName || "",
-          homeScore: home?.score ?? "0",
-          awayScore: away?.score ?? "0",
-          inning: status?.period || 0,
-          isTopInning: situation?.isTopInning ?? true,
-          outs: situation?.outs || 0,
-          onFirst: !!situation?.onFirst,
-          onSecond: !!situation?.onSecond,
-          onThird: !!situation?.onThird,
-          statusState: status?.type?.state || "pre",
-          statusDetail: status?.type?.shortDetail || "",
-          completed: !!status?.type?.completed,
-        };
+
+        // Track most recent game data for live display
+        const isLiveOrRecent = status?.type?.state === "in" || status?.type?.completed;
+        if (isLiveOrRecent) {
+          games[sr.id] = {
+            homeTeam: home?.team?.shortDisplayName || "",
+            awayTeam: away?.team?.shortDisplayName || "",
+            homeScore: home?.score ?? "0",
+            awayScore: away?.score ?? "0",
+            inning: status?.period || 0,
+            isTopInning: situation?.isTopInning ?? true,
+            outs: situation?.outs || 0,
+            onFirst: !!situation?.onFirst,
+            onSecond: !!situation?.onSecond,
+            onThird: !!situation?.onThird,
+            statusState: status?.type?.state || "pre",
+            statusDetail: status?.type?.shortDetail || "",
+            completed: !!status?.type?.completed,
+          };
+        }
+
+        // Track series wins — only count completed games
         if (status?.type?.completed) {
           const winner = teams.find(t => t.winner);
           if (winner) {
             const wName = winner.team?.shortDisplayName || winner.team?.displayName || "";
-            results[sr.id] = wName;
+            if (!seriesWins[sr.id]) seriesWins[sr.id] = {};
+            seriesWins[sr.id][wName] = (seriesWins[sr.id][wName] || 0) + 1;
           }
         }
       });
+
+      // Determine series winners — team with 2 wins wins the series
+      Object.entries(seriesWins).forEach(([srId, wins]) => {
+        const seriesWinner = Object.entries(wins).find(([, w]) => w >= 2);
+        if (seriesWinner) results[srId] = seriesWinner[0];
+      });
+
+      // Add series record to games display
+      Object.keys(games).forEach(srId => {
+        if (seriesWins[srId]) {
+          games[srId].seriesWins = seriesWins[srId];
+          games[srId].seriesComplete = !!results[srId];
+        }
+      });
+
       setLiveResults(results);
       setLiveGames(games);
       setLastSync(new Date());
