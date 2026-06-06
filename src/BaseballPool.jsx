@@ -96,7 +96,7 @@ const DB_KEY = "fellowship_baseball_v2";
 function loadDB() { try { return JSON.parse(localStorage.getItem(DB_KEY)) || { groups: {} }; } catch { return { groups: {} }; } }
 function saveDB(db) { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
 
-const ESPN_BB_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard?limit=50&groups=50&dates=20260605-20260610";
+const ESPN_BB_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard?limit=100&groups=50";
 
 const bBtn = (color) => ({
   background: `${color}22`, color, border: `1px solid ${color}44`,
@@ -150,7 +150,7 @@ function SRCard({ sr, picks, onChange, liveResults, liveGames }) {
   const visitorInfo = getTeamInfo(sr.visitor);
 
   const isLive = game?.statusState === "in";
-  const isFinal = game?.completed;
+  const isFinal = game?.completed || game?.statusState === "post";
 
   return (
     <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.07)", borderLeft: pickInfo ? `3px solid ${pickInfo.color}` : "3px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 14, cursor: "pointer" }}>
@@ -474,7 +474,8 @@ export default function BaseballPool({ onBack, user }) {
         if (!sr) return;
 
         // Track most recent game data for live/final display
-        const isLiveOrDone = status?.type?.state === "in" || status?.type?.state === "post" || status?.type?.completed;
+        const state = status?.type?.state;
+        const isLiveOrDone = state === "in" || state === "post" || !!status?.type?.completed;
         if (isLiveOrDone) {
           games[sr.id] = {
             homeTeam: home?.team?.shortDisplayName || "",
@@ -487,14 +488,14 @@ export default function BaseballPool({ onBack, user }) {
             onFirst: !!situation?.onFirst,
             onSecond: !!situation?.onSecond,
             onThird: !!situation?.onThird,
-            statusState: status?.type?.state || "pre",
+            statusState: state || "pre",
             statusDetail: status?.type?.shortDetail || "",
-            completed: !!status?.type?.completed,
+            completed: state === "post" || !!status?.type?.completed,
           };
         }
 
         // Track series wins — only count completed games
-        if (status?.type?.completed) {
+        if (state === "post" || status?.type?.completed) {
           const winner = teams.find(t => t.winner);
           if (winner) {
             const wName = winner.team?.shortDisplayName || winner.team?.displayName || "";
