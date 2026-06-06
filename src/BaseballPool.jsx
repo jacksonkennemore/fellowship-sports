@@ -96,6 +96,8 @@ const DB_KEY = "fellowship_baseball_v2";
 function loadDB() { try { return JSON.parse(localStorage.getItem(DB_KEY)) || { groups: {} }; } catch { return { groups: {} }; } }
 function saveDB(db) { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
 
+// Fetch all SR games June 5-7 2026
+const ESPN_BB_DATES = ["20260605", "20260606", "20260607", "20260608", "20260609", "20260610"];
 const ESPN_BB_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard?limit=100&groups=50";
 
 const bBtn = (color) => ({
@@ -446,14 +448,17 @@ export default function BaseballPool({ onBack, user }) {
   const fetchScores = useCallback(async (silent = false) => {
     if (!silent) setLiveStatus("fetching");
     try {
-      const res  = await fetch(ESPN_BB_URL);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      const seriesWins = {}; // { srId: { teamName: wins } }
+      // Fetch all SR dates to get complete series picture
+      const responses = await Promise.all(
+        ESPN_BB_DATES.map(d => fetch(`${ESPN_BB_URL}&dates=${d}`).then(r => r.ok ? r.json() : { events: [] }).catch(() => ({ events: [] })))
+      );
+      const allEvents = responses.flatMap(data => data.events || []);
+
+      const seriesWins = {};
       const games = {};
       const results = {};
 
-      (data.events || []).forEach(ev => {
+      allEvents.forEach(ev => {
         const comp = ev.competitions?.[0];
         if (!comp) return;
         const teams = comp.competitors || [];
@@ -461,9 +466,9 @@ export default function BaseballPool({ onBack, user }) {
         const away = teams.find(t => t.homeAway === "away");
         const status = ev.status;
         const situation = comp.situation || {};
+        const state = status?.type?.state;
         const allNames = [...teams.map(t => t.team?.shortDisplayName?.toLowerCase() || ""), ...teams.map(t => t.team?.displayName?.toLowerCase() || "")];
 
-        // Match SR by requiring BOTH teams to be present in the game
         const sr = SUPER_REGIONALS.find(s => {
           const hostLast = s.host.split(" ").pop().toLowerCase();
           const visitorLast = s.visitor.split(" ").pop().toLowerCase();
@@ -473,28 +478,31 @@ export default function BaseballPool({ onBack, user }) {
         });
         if (!sr) return;
 
-        // Track most recent game data for live/final display
-        const state = status?.type?.state;
+        // Always store most recent game state (live overrides completed)
         const isLiveOrDone = state === "in" || state === "post" || !!status?.type?.completed;
         if (isLiveOrDone) {
-          games[sr.id] = {
-            homeTeam: home?.team?.shortDisplayName || "",
-            awayTeam: away?.team?.shortDisplayName || "",
-            homeScore: home?.score ?? "0",
-            awayScore: away?.score ?? "0",
-            inning: status?.period || 0,
-            isTopInning: situation?.isTopInning ?? true,
-            outs: situation?.outs || 0,
-            onFirst: !!situation?.onFirst,
-            onSecond: !!situation?.onSecond,
-            onThird: !!situation?.onThird,
-            statusState: state || "pre",
-            statusDetail: status?.type?.shortDetail || "",
-            completed: state === "post" || !!status?.type?.completed,
-          };
+          const existingState = games[sr.id]?.statusState;
+          // Live game takes priority, otherwise keep most recent
+          if (!games[sr.id] || state === "in" || existingState !== "in") {
+            games[sr.id] = {
+              homeTeam: home?.team?.shortDisplayName || "",
+              awayTeam: away?.team?.shortDisplayName || "",
+              homeScore: home?.score ?? "0",
+              awayScore: away?.score ?? "0",
+              inning: status?.period || 0,
+              isTopInning: situation?.isTopInning ?? true,
+              outs: situation?.outs || 0,
+              onFirst: !!situation?.onFirst,
+              onSecond: !!situation?.onSecond,
+              onThird: !!situation?.onThird,
+              statusState: state || "pre",
+              statusDetail: status?.type?.shortDetail || "",
+              completed: state === "post" || !!status?.type?.completed,
+            };
+          }
         }
 
-        // Track series wins — only count completed games
+        // Track series wins across all completed games
         if (state === "post" || status?.type?.completed) {
           const winner = teams.find(t => t.winner);
           if (winner) {
@@ -505,13 +513,13 @@ export default function BaseballPool({ onBack, user }) {
         }
       });
 
-      // Determine series winners — team with 2 wins wins the series
+      // Determine series winners
       Object.entries(seriesWins).forEach(([srId, wins]) => {
         const seriesWinner = Object.entries(wins).find(([, w]) => w >= 2);
         if (seriesWinner) results[srId] = seriesWinner[0];
       });
 
-      // Add series record to games display
+      // Attach series record to games
       Object.keys(games).forEach(srId => {
         if (seriesWins[srId]) {
           games[srId].seriesWins = seriesWins[srId];
