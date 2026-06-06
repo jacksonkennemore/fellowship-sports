@@ -421,8 +421,16 @@ export default function BaseballPool({ onBack, user }) {
   const [champPick, setChampPick] = useState(null);
   const [activeTab, setActiveTab] = useState("sr");
   const [expandedUser, setExpandedUser] = useState(null);
-  const [liveResults, setLiveResults]   = useState({});
-  const [liveGames, setLiveGames]       = useState({});
+  const [liveResults, setLiveResults] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("fs_sr_results") || "{}"); } catch { return {}; }
+  });
+  const [liveGames, setLiveGames] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("fs_sr_games") || "{}"); } catch { return {}; }
+  });
+
+  // Persist whenever they change
+  useEffect(() => { localStorage.setItem("fs_sr_results", JSON.stringify(liveResults)); }, [liveResults]);
+  useEffect(() => { localStorage.setItem("fs_sr_games", JSON.stringify(liveGames)); }, [liveGames]);
   const [liveStatus, setLiveStatus]     = useState("idle");
   const [lastSync, setLastSync]         = useState(null);
 
@@ -527,8 +535,17 @@ export default function BaseballPool({ onBack, user }) {
         }
       });
 
-      setLiveResults(results);
-      setLiveGames(games);
+      setLiveResults(prev => ({ ...prev, ...results }));
+      setLiveGames(prev => {
+        const merged = { ...prev };
+        Object.entries(games).forEach(([id, g]) => {
+          // Live game always wins; completed game only overwrites if we don't already have a series complete
+          if (g.statusState === "in" || !merged[id]?.seriesComplete) {
+            merged[id] = g;
+          }
+        });
+        return merged;
+      });
       setLastSync(new Date());
       setLiveStatus(Object.keys(games).length > 0 ? "live" : "pre");
     } catch { setLiveStatus("pre"); }
@@ -715,6 +732,7 @@ export default function BaseballPool({ onBack, user }) {
         <button style={bBtn("#e05050")} onClick={() => {
           const lines = adminScoreInput.split("\n").map(l => l.trim()).filter(Boolean);
           const newResults = { ...liveResults };
+          const newGames = { ...liveGames };
           lines.forEach(winner => {
             const sr = SUPER_REGIONALS.find(s =>
               s.host.toLowerCase().includes(winner.toLowerCase()) ||
@@ -722,9 +740,21 @@ export default function BaseballPool({ onBack, user }) {
               winner.toLowerCase().includes(s.host.split(" ").pop().toLowerCase()) ||
               winner.toLowerCase().includes(s.visitor.split(" ").pop().toLowerCase())
             );
-            if (sr) newResults[sr.id] = winner;
+            if (sr) {
+              newResults[sr.id] = winner;
+              // Build series wins so bottom bar shows
+              const loser = winner.toLowerCase().includes(sr.host.split(" ").pop().toLowerCase()) ? sr.visitor : sr.host;
+              newGames[sr.id] = {
+                ...(newGames[sr.id] || {}),
+                seriesWins: { [winner]: 2, [loser.split(" ").pop()]: 0 },
+                seriesComplete: true,
+                statusState: "post",
+                completed: true,
+              };
+            }
           });
           setLiveResults(newResults);
+          setLiveGames(newGames);
           flash(`✓ Updated ${lines.length} result${lines.length !== 1 ? "s" : ""}`);
           setAdminScoreInput("");
         }}>Apply Results</button>
