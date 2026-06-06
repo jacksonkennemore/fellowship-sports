@@ -96,7 +96,7 @@ const DB_KEY = "fellowship_baseball_v2";
 function loadDB() { try { return JSON.parse(localStorage.getItem(DB_KEY)) || { groups: {} }; } catch { return { groups: {} }; } }
 function saveDB(db) { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
 
-const ESPN_BB_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard";
+const ESPN_BB_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/college-baseball/scoreboard?limit=50&groups=50&dates=20260605-20260610";
 
 const bBtn = (color) => ({
   background: `${color}22`, color, border: `1px solid ${color}44`,
@@ -473,9 +473,9 @@ export default function BaseballPool({ onBack, user }) {
         });
         if (!sr) return;
 
-        // Track most recent game data for live display
-        const isLiveOrRecent = status?.type?.state === "in" || status?.type?.completed;
-        if (isLiveOrRecent) {
+        // Track most recent game data for live/final display
+        const isLiveOrDone = status?.type?.state === "in" || status?.type?.state === "post" || status?.type?.completed;
+        if (isLiveOrDone) {
           games[sr.id] = {
             homeTeam: home?.team?.shortDisplayName || "",
             awayTeam: away?.team?.shortDisplayName || "",
