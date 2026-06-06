@@ -720,11 +720,11 @@ export default function BaseballPool({ onBack, user }) {
     <div style={card}>
       <div style={{ fontFamily: DISPLAY, fontSize: 18, letterSpacing: "0.06em", color: "#e05050", marginBottom: 8 }}>✏️ MANUAL RESULT OVERRIDE</div>
       <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13, marginBottom: 10, fontFamily: BODY }}>
-        If ESPN misses a result, enter it manually. Format: <code style={{ color: "rgba(255,255,255,0.6)" }}>Georgia</code> (just the winning team name, one per line).
+        Format: <code style={{ color: "rgba(255,255,255,0.6)" }}>Ole Miss 1-0</code> for game record, <code style={{ color: "rgba(255,255,255,0.6)" }}>West Virginia 2-0</code> for series winner. One per line.
       </p>
       <textarea
-        style={{ ...inp, height: 120, resize: "vertical", marginBottom: 10 }}
-        placeholder={"Georgia\nAuburn\nNorth Carolina\n..."}
+        style={{ ...inp, height: 140, resize: "vertical", marginBottom: 10 }}
+        placeholder={"Ole Miss 1-0\nWest Virginia 1-0\nNorth Carolina 1-0\nTroy 1-0"}
         value={adminScoreInput}
         onChange={e => setAdminScoreInput(e.target.value)}
       />
@@ -733,32 +733,38 @@ export default function BaseballPool({ onBack, user }) {
           const lines = adminScoreInput.split("\n").map(l => l.trim()).filter(Boolean);
           const newResults = { ...liveResults };
           const newGames = { ...liveGames };
-          lines.forEach(winner => {
+          lines.forEach(line => {
+            const match = line.match(/^(.+?)\s+(\d+)-(\d+)$/);
+            if (!match) return;
+            const [, teamName, wStr, lStr] = match;
+            const wins = parseInt(wStr), losses = parseInt(lStr);
             const sr = SUPER_REGIONALS.find(s =>
-              s.host.toLowerCase().includes(winner.toLowerCase()) ||
-              s.visitor.toLowerCase().includes(winner.toLowerCase()) ||
-              winner.toLowerCase().includes(s.host.split(" ").pop().toLowerCase()) ||
-              winner.toLowerCase().includes(s.visitor.split(" ").pop().toLowerCase())
+              s.host.toLowerCase().includes(teamName.toLowerCase().trim()) ||
+              s.visitor.toLowerCase().includes(teamName.toLowerCase().trim()) ||
+              teamName.toLowerCase().trim().includes(s.host.split(" ").pop().toLowerCase()) ||
+              teamName.toLowerCase().trim().includes(s.visitor.split(" ").pop().toLowerCase())
             );
-            if (sr) {
-              newResults[sr.id] = winner;
-              // Build series wins so bottom bar shows
-              const loser = winner.toLowerCase().includes(sr.host.split(" ").pop().toLowerCase()) ? sr.visitor : sr.host;
-              newGames[sr.id] = {
-                ...(newGames[sr.id] || {}),
-                seriesWins: { [winner]: 2, [loser.split(" ").pop()]: 0 },
-                seriesComplete: true,
-                statusState: "post",
-                completed: true,
-              };
-            }
+            if (!sr) return;
+            const isHost = sr.host.toLowerCase().includes(teamName.toLowerCase().trim()) || teamName.toLowerCase().trim().includes(sr.host.split(" ").pop().toLowerCase());
+            const leader = isHost ? sr.host : sr.visitor;
+            const trailer = isHost ? sr.visitor : sr.host;
+            const seriesWins = { [leader.split(" ").pop()]: wins, [trailer.split(" ").pop()]: losses };
+            const seriesComplete = wins >= 2;
+            if (seriesComplete) newResults[sr.id] = leader;
+            newGames[sr.id] = {
+              ...(newGames[sr.id] || {}),
+              statusState: "post",
+              completed: seriesComplete,
+              seriesWins,
+              seriesComplete,
+            };
           });
           setLiveResults(newResults);
           setLiveGames(newGames);
           flash(`✓ Updated ${lines.length} result${lines.length !== 1 ? "s" : ""}`);
           setAdminScoreInput("");
         }}>Apply Results</button>
-        <button style={bBtn("rgba(255,255,255,0.3)")} onClick={() => { setLiveResults({}); flash("✓ Results cleared"); }}>Clear All</button>
+        <button style={bBtn("rgba(255,255,255,0.3)")} onClick={() => { setLiveResults({}); setLiveGames({}); flash("✓ Results cleared"); }}>Clear All</button>
       </div>
     </div>
 
